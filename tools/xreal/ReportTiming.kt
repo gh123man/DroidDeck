@@ -16,6 +16,10 @@ import java.nio.ByteOrder
 /** Read-only app_process probe: compares sensor timestamps with TCP arrival timing. */
 object ReportTiming {
     @JvmStatic fun main(args: Array<String>) {
+        if (args.size == 2 && args[0] == "--pose") {
+            capturePose(args[1])
+            return
+        }
         Looper.prepareMainLooper()
         val activityThread = Class.forName("android.app.ActivityThread")
         val thread = activityThread.getMethod("systemMain").invoke(null)
@@ -68,4 +72,32 @@ object ReportTiming {
             }
         }
     }
+
+    private fun capturePose(path: String) {
+        java.io.RandomAccessFile(path, "r").use { file ->
+            val map = file.channel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, 0, 128)
+                .order(ByteOrder.LITTLE_ENDIAN)
+            require(map.getInt(0) == 0x50484444 && map.getInt(4) == 1)
+            val rows = mutableListOf<String>()
+            var previous = 0
+            val start = System.nanoTime()
+            while (System.nanoTime() - start < 10_000_000_000L) {
+                val seq = map.getInt(8)
+                if (seq and 1 == 0 && seq != previous) {
+                    val flags = map.getInt(12)
+                    val time = map.getLong(56)
+                    val matrix = FloatArray(9) { map.getFloat(16 + it * 4) }
+                    val now = System.nanoTime()
+                    if (map.getInt(8) == seq) {
+                        rows.add("$now,$time,$seq,$flags," + matrix.joinToString(","))
+                        previous = seq
+                    }
+                }
+                java.util.concurrent.locks.LockSupport.parkNanos(500_000)
+            }
+            println("observed_ns,published_ns,seq,flags,m00,m01,m02,m10,m11,m12,m20,m21,m22")
+            rows.forEach(::println)
+        }
+    }
+
 }

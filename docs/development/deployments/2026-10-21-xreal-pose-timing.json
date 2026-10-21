@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-21",
+  "environment": "Retroid Pocket 6 / Android 13 / XR Dev",
+  "purpose": "Read-only ten-second shared-head-pose capture to measure downstream update gaps and orientation discontinuities",
+  "source_sha256": {
+    "tools/xreal/ReportTiming.kt": "824b0901809970189e2f13958ac9c8dd54c3b04c0b66d7064a011747b7f556b2"
+  },
+  "artifact_sha256": "c533242571b02fbec73f988254997b28cdba0aad5b13ae189790a6bb5d1fe205",
+  "artifact": "/data/local/tmp/droiddeck-xreal-timing.jar",
+  "build_method": "Kotlin 2.1.0, D8 8.8.34 min API 26; app_process under the XR Dev app UID with --pose and the shared-pose file path. No application changes."
+}
