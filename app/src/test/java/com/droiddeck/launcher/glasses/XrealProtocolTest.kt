@@ -79,7 +79,27 @@ class XrealProtocolTest {
         val reply = byteArrayOf(0x22, 2, 0x10, 0x1d)
         val control = XrealControl(channels(response(0x275e, 1, reply).inputStream(), ByteArrayOutputStream()))
         assertEquals(29, control.display())
-        assertEquals(29, XrealModel.mode(60, false))
+        assertEquals(29, XrealModel.ONE_S.mode(60, false))
+    }
+
+    @Test fun oneRestoresNative1080pAfterStereoWithoutRequesting1sMode() {
+        val output = ByteArrayOutputStream()
+        val replies = response(0x2822, 1, byteArrayOf(0x22, 0)) +
+            response(0x275e, 2, byteArrayOf(0x22, 2, 0x10, 5)) +
+            response(0x275e, 3, byteArrayOf(0x22, 2, 0x10, 2))
+        val control = XrealControl(channels(replies.inputStream(), output), 0, XrealModel.ONE)
+        assertEquals(2, control.changeDisplay(XrealModel.ONE.mode(60, false)))
+        val requests = output.toByteArray().inputStream()
+        assertEquals(XrealProtocol.SET_INPUT, XrealProtocol.read(requests).command)
+        repeat(2) { assertEquals(XrealProtocol.GET_DISPLAY, XrealProtocol.read(requests).command) }
+        assertEquals(0, requests.available())
+    }
+
+    @Test fun oneRejects1sDisplayModeWithoutWritingACommand() {
+        val output = ByteArrayOutputStream()
+        val control = XrealControl(channels(byteArrayOf().inputStream(), output), 0, XrealModel.ONE)
+        assertThrows(IllegalArgumentException::class.java) { control.changeDisplay(29) }
+        assertEquals(0, output.size())
     }
 
     @Test fun stereoWaitsForEdidChangeWithoutSendingASecondModeCommandWhileBusy() {

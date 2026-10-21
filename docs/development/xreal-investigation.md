@@ -240,3 +240,9 @@ extended gameplay stability need hardware validation. One successful view/motion
 check does not establish long-session stability. Users must select Follow mode and disable the glasses' own
 stabilization. Factory calibration and XREAL Eye/6DoF are not implemented.
 One Pro is not enabled or claimed as tested.
+
+## XREAL One test adapter (2026-10-21)
+
+A separate experimental profile now recognizes normal One `3318:0438`; recovery `0437` remains rejected. One uses the manufacturer's 50° FOV and native mode 2, while 1S keeps 52° and mode 29. Family-based routing shares the TCP connection without requesting Android USB-interface access. Outgoing mode requests are checked against the selected profile before any control writes.
+
+This is an unvalidated hardware extension: the existing 1S sensor basis/fusion is reused provisionally. No One hardware captures or Retroid Pocket 6 tests have been performed. One brightness and dimming are disabled pending verification, and Eye/6DoF remains unsupported. See the [test checklist](../smart-glasses-support.md#xreal-one-test-build).
