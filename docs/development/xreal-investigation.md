@@ -400,3 +400,14 @@ the acquired image index. The regression keeps presentation waits pending after
 copy completion and exercises non-sequential image acquisition. Partial semaphore
 allocation failure also releases only successfully created resources. This
 corrects a separate synchronization violation; hardware impact remains untested.
+
+The per-image driver semaphore diagnostic was installed after deployment record
+`ae0d1383` was pushed. Session `2026-10-21-14-steam` verified driver SHA-256
+`5fcc3e6a2f52c7609a6810bac6e6b6555e87abc56f06a9b6d7edc707d6bfba23`.
+The wearer reported a substantial further improvement, but clarified that abrupt
+snaps remained. Presenter intervals still contained about 562–573 frames per ten
+seconds. One SurfaceFlinger sample had 123 display intervals near 16.7 ms and two
+near 33.4 ms; those missed refreshes alone do not explain backward orientation
+snaps. The Android compositor was then found to reuse its own present semaphores
+by submission slot, independently of swapchain image ownership. That downstream
+path is being corrected and validated separately; its hardware effect is pending.

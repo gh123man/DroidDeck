@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'tools/vr/**'
+      - 'app/src/main/cpp/waylandcomp/src/vk_present.c'
+      - 'tools/tests/test_android_present_semaphores.py'
       - 'tools/tests/test_steamvr_helper.py'
       - 'tools/tests/test_vr_producer_lease.py'
       - 'tools/linuxfs/overlay/usr/local/bin/droiddeck-steamvr'
@@ -10,6 +12,8 @@ on:
   pull_request:
     paths:
       - 'tools/vr/**'
+      - 'app/src/main/cpp/waylandcomp/src/vk_present.c'
+      - 'tools/tests/test_android_present_semaphores.py'
       - 'tools/tests/test_steamvr_helper.py'
       - 'tools/tests/test_vr_producer_lease.py'
       - 'tools/linuxfs/overlay/usr/local/bin/droiddeck-steamvr'
@@ -30,7 +34,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers
       - name: Test producer completion and retained ownership
-        run: python3 -m unittest tools.tests.test_steamvr_helper tools.tests.test_vr_producer_lease -v
+        run: python3 -m unittest tools.tests.test_steamvr_helper tools.tests.test_vr_producer_lease tools.tests.test_android_present_semaphores -v
       - name: Test presenter and submission ordering
         run: |
           mkdir -p /tmp/vr-sync-tests
@@ -45,3 +49,29 @@ jobs:
             cc -std=c11 -O2 -pthread -Itools/vr/src tools/vr/tests/test_${test}.c -ldl -o /tmp/vr-sync-tests/$test
             /tmp/vr-sync-tests/$test
           done
+  android-compositor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build Android compositor
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/27.3.13750724"
+          if [ ! -d "$ndk" ]; then sdkmanager 'ndk;27.3.13750724'; fi
+          cmake -S app/src/main/cpp -B /tmp/android-compositor -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 \
+            -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/android-compositor --target droiddeckwayland --parallel 4
+          mkdir -p /tmp/compositor-artifact
+          cp /tmp/android-compositor/waylandcomp/libdroiddeckwayland.so /tmp/compositor-artifact/
+          cp "$ndk/source.properties" /tmp/compositor-artifact/ndk-source.properties
+          git rev-parse HEAD > /tmp/compositor-artifact/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-compositor
+          path: /tmp/compositor-artifact
+          retention-days: 7
