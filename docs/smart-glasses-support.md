@@ -92,7 +92,7 @@ The One profile matches only normal USB `3318:0438` and uses the published 50° 
 
 Test on the target Android device before claiming support:
 
-1. Use a video/data-capable USB-C connection and current glasses firmware. Select Follow mode and disable the glasses' own stabilization/anchor and automatic 2D-to-3D conversion.
+1. Use a video/data-capable USB-C connection and current glasses firmware. Select **Follow** mode. Double-click the red **X** button, then turn **Spatial Screen → Stabilizer** off; XREAL enables it by default in Follow mode. Also disable automatic 2D-to-3D conversion. See [XREAL's Stabilizer instructions](https://tutorials.xreal.com/docs/glasses/one-series/osd/stabilizer/).
 2. Confirm **Setup → Smart glasses** identifies **XREAL One**, obtains a picture, and connects tracking. A picture without tracking may mean Android did not expose the USB-Ethernet link. Keep Wi-Fi connected and check Internet access still works.
 3. Start with the 2D virtual screen. Recenter while level, then independently test looking left/right, up/down, and tilting each way. Stop tracked rendering if the view moves incorrectly or causes discomfort.
 4. Test SBS at 60 Hz, verify distinct left/right images, then turn it off and confirm 1920×1080 2D returns. Test SteamVR only after this works; the headset pose remains rotational 3DoF.
