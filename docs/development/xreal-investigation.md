@@ -411,3 +411,13 @@ near 33.4 ms; those missed refreshes alone do not explain backward orientation
 snaps. The Android compositor was then found to reuse its own present semaphores
 by submission slot, independently of swapchain image ownership. That downstream
 path is being corrected and validated separately; its hardware effect is pending.
+
+The Android compositor correction passed [Linux tests and a full Android native
+compositor build](https://github.com/gh123man/DroidDeck/actions/runs/39690167782).
+The prepared diagnostic is recorded in
+[`2026-10-21-xreal-android-semaphores.json`](deployments/2026-10-21-xreal-android-semaphores.json).
+Only the Android compositor library changes from the installed diagnostic; the
+Linux presenter and Java/Dex payload are unchanged. Deployment record `a811f967`
+was pushed, but wireless ADB disconnected before installation. The last connection
+port refused reconnect, so this third synchronization diagnostic is not yet
+installed or hardware-validated.
