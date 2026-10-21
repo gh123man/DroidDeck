@@ -102,6 +102,7 @@ HandTrace gHandTrace;
 
 class PoseFile {
 public:
+    explicit PoseFile(const char *path = kPosePath) : path_(path) {}
     bool Read(droiddeck_headpose *out) {
         if (!map_ && !Open()) return false;
         for (int tries = 0; tries < 8; tries++) {
@@ -118,15 +119,16 @@ public:
 
 private:
     bool Open() {
-        int fd = open(kPosePath, O_RDONLY | O_CLOEXEC);
+        int fd = open(path_.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd < 0) return false;
         void *p = mmap(nullptr, sizeof(droiddeck_headpose), PROT_READ, MAP_SHARED, fd, 0);
         close(fd);
         if (p == MAP_FAILED) return false;
         map_ = (volatile droiddeck_headpose *)p;
-        Log("head pose file mapped: %s", kPosePath);
+        Log("head pose file mapped: %s", path_.c_str());
         return true;
     }
+    std::string path_;
     volatile droiddeck_headpose *map_ = nullptr;
 };
 
@@ -1348,6 +1350,7 @@ private:
 
 class CardboardHmd : public ITrackedDeviceServerDriver, public IVRDisplayComponent {
 public:
+    explicit CardboardHmd(const char *posePath = kPosePath) : pose_(posePath) {}
     EVRInitError Activate(uint32_t unObjectId) override {
         id_ = unObjectId;
         PropertyContainerHandle_t c = VRProperties()->TrackedDeviceToPropertyContainer(id_);
@@ -1471,8 +1474,9 @@ public:
         }
         p.vecPosition[1] = 1.6;
         droiddeck_headpose hp;
-        bool ok = pose_.Read(&hp);
-        if (ok) {
+        if (pose_.Read(&hp)) lastHeadPoseSnapshot_ = hp;
+        else hp = lastHeadPoseSnapshot_;
+        if (hp.magic == DROIDDECK_HEADPOSE_MAGIC && hp.version == DROIDDECK_HEADPOSE_VERSION) {
             p.qRotation = QuatFromMatrix(hp.rot);
             p.poseTimeOffset = 0;
             if (hp.tan_half_fov > 0.0f) tanHalf_ = hp.tan_half_fov;
@@ -1771,6 +1775,7 @@ private:
     PoseFile pose_;
     SpatialFile spatial_;
     std::mutex spatialMutex_;
+    droiddeck_headpose lastHeadPoseSnapshot_{};
     DriverPose_t lastSpatial_{};
     droiddeck_spatialpose lastSpatialSnapshot_{};
     XrTrackingFile xr_;

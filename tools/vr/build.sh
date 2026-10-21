@@ -50,6 +50,9 @@ compile() {
             -o build/vr/test_adaptive_pose tools/vr/tests/test_adaptive_pose.cpp
         build/vr/test_adaptive_pose
         c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Itools/vr/src \
+            -o build/vr/test_head_pose_contention tools/vr/tests/test_head_pose_contention.cpp
+        build/vr/test_head_pose_contention
+        c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Itools/vr/src \
             -o build/vr/test_optical_controller tools/vr/tests/test_optical_controller.cpp
         build/vr/test_optical_controller
         cc -shared -fPIC -O2 -Wall -Wextra -Werror \
