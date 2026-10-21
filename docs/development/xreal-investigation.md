@@ -374,3 +374,9 @@ for ARM64 Linux. The hardware diagnostic is identified by
 [`2026-10-21-xreal-producer-lease.json`](deployments/2026-10-21-xreal-producer-lease.json);
 the installed Vulkan layer already contains the lease server, so only the driver
 and launcher helper assets change. Hardware effectiveness remains unconfirmed.
+
+The diagnostic APK installed successfully after deployment-record commit
+`4dc28f7e` was pushed. Android then reported no attached glasses and the session
+was idle. The on-disk runtime still contained the preceding driver/helper, which
+are staged from APK assets when a new session starts. Runtime hash verification,
+lease activity, and sustained wearer comparison remain pending reconnection.
