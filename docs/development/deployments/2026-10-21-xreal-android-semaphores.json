@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-21",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "purpose": "Hardware comparison with per-image Android presentation semaphores; the preceding SteamVR driver and producer lease are unchanged",
+  "source_commit": "500aa663897157adda5c92fed353a4b86e1419b7",
+  "source_sha256": {
+    "app/src/main/cpp/waylandcomp/src/vk_present.c": "8340bcbebdea622647aa164fa1f6e65ac4d672487a69d33a4eb71c629566f2a8",
+    "app/src/main/cpp/CMakeLists.txt": "2c6679d2336369bcd8316efe3243c60a239190bb2994eb6b14bff4c5be4b875f",
+    "tools/tests/test_android_present_semaphores.py": "0a680c3b6349aa3766f6f5c8ddd3c02a7aca2b8ae3ce4ad76dd8be3304051307",
+    "tools/vr/tests/test_android_present_semaphores.c": "2575c3ed268ada1f9d42ade4e10fdeacd223e82aa2668a7d4965df97232badd7"
+  },
+  "apk_sha256": "00586ad1e88526d73f818caf71d9277a6397552a7849fc4e634248036c5b6b7a",
+  "base_apk_sha256": "09f7cf0064759504dbf04f8944c5073c600d933597546bbc9e8c6c3c796c3869",
+  "compositor_sha256": "d5b24a67e4319707c0cf0e465d46c1094fafd7dd0c80fbd8573abaa714d06d50",
+  "compositor_asset": "lib/arm64-v8a/libdroiddeckwayland.so",
+  "changed_assets": [
+    "lib/arm64-v8a/libdroiddeckwayland.so"
+  ],
+  "original_ci_library_sha256": "b0426623e28033d5294cb3b1c2bafb27e69983b58c287a3e7a2defc877ff3707",
+  "signer_sha256": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+  "build_method": "GitHub Actions built the full droiddeckwayland target and dependencies from root CMake with NDK 27.3.13750724, arm64-v8a, Android API 29, c++_shared and Debug configuration. Only the unrelated Quest OpenXR bridge was disabled. Debug sections stripped and the native library replaced in the prior diagnostic APK. Android build-tools 35 aligned and signed with repository test key.",
+  "pre_install_validation": [
+    "Linux CI: 22 launcher/producer/Android semaphore tests passed; native presenter, fence tracker, compositor submit, and semaphore layer regressions passed.",
+    "Full Android compositor and frame-generation engines compiled and linked.",
+    "Signer and APK alignment verified. Only the compositor library payload changed; Java/Dex, Linux driver, helper, and shared C++ runtime are unchanged."
+  ],
+  "ci_url": "https://github.com/gh123man/DroidDeck/actions/runs/39690167782",
+  "limitations": [
+    "Not a full Gradle APK build; donor label inherited.",
+    "Native build targets API 29 instead of donor API 26; both use NDK r27d and target the Android 13 Retroid.",
+    "Hardware impact pending before deployment. The SteamVR sync-texture warning is not directly addressed by this change."
+  ]
+}
