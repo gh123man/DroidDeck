@@ -136,6 +136,7 @@ private:
 };
 
 class Impl {
+    friend struct PresenterTest;
 public:
     static Impl &Get() {
         static Impl *impl = made_ = new Impl;
@@ -165,8 +166,7 @@ public:
     void Submit(const EyeFrame &f) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (failed_ || exit_) return;
-        bool blocking = FrameChannelRequested();
-        if (blocking) cv_.wait(lock, [this] { return failed_ || exit_ || (!haveFrame_ && !inFlight_); });
+        cv_.wait(lock, [this] { return failed_ || exit_ || (!haveFrame_ && !inFlight_); });
         if (failed_ || exit_) return;
         EnsureThread();
         frame_ = f;
@@ -180,7 +180,8 @@ public:
         submitted_++;
         uint64_t ticket = ++ticket_;
         cv_.notify_all();
-        if (blocking) cv_.wait(lock, [this, ticket] { return failed_ || completed_ >= ticket; });
+        // Submitted eye textures may be reused after Present returns.
+        cv_.wait(lock, [this, ticket] { return failed_ || exit_ || completed_ >= ticket; });
     }
 
     void Shutdown() {

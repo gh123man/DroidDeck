@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-21",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "purpose": "Hardware comparison for asynchronous eye-texture copying and repeated absent-XR-file opens",
+  "source_sha256": {
+    "tools/vr/src/driver_droiddeck.cpp": "76263a604259096b8ec8236f5b42807e758656b49ef2bd558ea1ce40b2a593cb",
+    "tools/vr/src/presenter.cpp": "c4773bf9a116770204e533b2459ee9f9794698040bdb40dde7b16090af78fee5",
+    "tools/vr/src/xr_tracking_file.h": "70f0a10e6ed97a29750c6936a8c5d2ce883e332899283281c64d77c4f3547076",
+    "tools/vr/tests/test_presenter_completion.cpp": "451b72cf6eb8cb7a90d6eb4e85a98c8116dee0fd5e9d0fa8ff17e7a62fdb7538",
+    "tools/vr/tests/test_xr_tracking.cpp": "0fe6e8716eb3c4109e7f4f4c6ef1e9cab5e50c61fa9991b1d78871aa91213ee1"
+  },
+  "apk_sha256": "256d5d25aaf71b0ce43a20926cc8acb62a0306fbe4ca3ed2375926d18009250d",
+  "base_apk_sha256": "cdab14141fd2ffb148477dca67fa8f06e7dac56eda981de26a64f229d0b64782",
+  "driver_sha256": "b218dece58bf09ec0d00b06333c43dd46c75da72369b0b4f3e988e3488aaa174",
+  "driver_asset": "assets/linuxfs/usr/local/lib/droiddeck-vr/droiddeck/bin/linuxarm64/driver_droiddeck.so",
+  "signer_sha256": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+  "build_method": "Diagnostic APK asset replacement. Zig 0.13.0 (Clang 18) cross-compiled the C++17 ARM64 Linux driver/presenter with target aarch64-linux-gnu.2.31, -O2 -fPIC -shared -fvisibility=hidden -pthread -Wl,-z,defs, Vulkan-Headers v1.3.296 and repository Wayland stubs/protocol. C++ runtime linked statically; DT_NEEDED: libwayland-client.so.0, libm.so.6, libpthread.so.0, libc.so.6, libdl.so.2. Android build-tools 35 aligned and signed with repository test key.",
+  "pre_install_validation": [
+    "Actual presenter concurrency regression fails with the old flat-path early return and passes with copy completion and shutdown wakeup. The renderer is held manually; no GPU is used in this test.",
+    "XR file backoff/reappearance/live-read regression and existing head-pose/optical-controller regressions pass.",
+    "macOS presenter test uses temporary compatibility declarations for unused Linux socket, futex and dma-buf paths; production source is unmodified by these declarations.",
+    "Driver and presenter regression cross-compile for ARM64 Linux without host substitutions. Cross-compiled regression not executed on device.",
+    "APK signer matches previous diagnostic APK; only the driver asset and root signature entries differ."
+  ],
+  "limitations": [
+    "Not a full Gradle/native rebuild; APK version label inherited from donor.",
+    "Closing the early-return window does not implement the missing SteamVR sync-texture handshake. Hardware effectiveness against snapping is unconfirmed before installation."
+  ]
+}

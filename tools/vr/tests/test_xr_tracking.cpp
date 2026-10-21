@@ -4,6 +4,9 @@
 #include <cstdio>
 #include <limits>
 
+static int64_t testNow = 1000000000LL;
+static int64_t TestClock() { return testNow; }
+
 int main(int argc, char **argv) {
     assert(XrTrackingFile::PoseTimeOffset(1010000000LL, 1000000000LL) == 0.01);
     assert(XrTrackingFile::PoseTimeOffset(990000000LL, 1000000000LL) == -0.01);
@@ -69,5 +72,24 @@ int main(int argc, char **argv) {
         assert(!reader.Read(&packet));
     }
     close(descriptor); unlink(filename);
+    {
+        XrTrackingFile reader(filename, TestClock);
+        DroidDeckXrTracking packet{};
+        assert(!reader.Read(&packet));
+        descriptor = open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
+        assert(descriptor >= 0);
+        packet.magic = DROIDDECK_XR_MAGIC; packet.version = DROIDDECK_XR_VERSION;
+        assert(write(descriptor, &packet, sizeof(packet)) == sizeof(packet));
+        for (int i = 0; i < 1000; i++) assert(!reader.Read(&packet));
+        testNow += 249999999LL;
+        assert(!reader.Read(&packet));
+        testNow++;
+        assert(reader.Read(&packet));
+        packet.seq = 2; packet.head.position[1] = 1.7f;
+        assert(pwrite(descriptor, &packet, sizeof(packet), 0) == sizeof(packet));
+        assert(reader.Read(&packet));
+        assert(packet.seq == 2 && packet.head.position[1] == 1.7f);
+        close(descriptor); unlink(filename);
+    }
     std::puts("XR IPC validation passed: valid, seqlock, version, stale, future, inactive, dimensions, truncated");
 }

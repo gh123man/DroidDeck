@@ -307,3 +307,38 @@ the automatic SBS switch updated its reported panel rate to 60 Hz; SteamVR's
 startup display log selected 120 Hz. These are leads for further frame-pacing
 investigation, not a proven cause of the wearer's stutter. Sensor filtering and
 TCP acknowledgement behavior were not changed on that evidence.
+
+### Intermittent snapping and hot-path audit
+
+The wearer subsequently reported brief smooth periods followed by snapping,
+including with Follow mode selected and the glasses' Stabilizer disabled.
+Starting SteamVR after SBS was established produced a confirmed 60 Hz startup,
+but did not consistently resolve the symptom.
+
+The installed driver now retains the last valid head pose when a seqlock read
+collides with the writer. The regression reproduces the previous neutral-pose
+snap, but wearer testing shows this was not the only issue.
+
+A later shared-pose capture included head sweeps while the wearer reported
+snapping. In its first three ten-second segments the maximum orientation steps
+were 2.00°, 0.45°, and 0.71°, with maximum publication gaps of 21.09, 14.01, and
+15.05 ms. Tracking flags remained enabled/live. This does not measure the
+displayed frame's age, but did not reproduce a large pose reset. The XREAL filter
+also rejects non-increasing sensor timestamps.
+
+No per-sample logging runs in the XREAL path. Semaphore tracing was disabled;
+routine presenter/compositor statistics run every ten seconds. The driver did
+retry an absent Quest tracking file on every pose read: failed opens now back
+off for 250 ms, while mapped tracking reads remain unrestricted. A regression
+covers a file appearing during backoff and subsequent immediate pose updates.
+
+Rendering remains a stronger lead: the Android compositor recorded buffer
+release work up to 32.47 ms and composition up to 19.45 ms against a 16.7 ms
+display period. The glasses presenter also returned from `Submit` before its
+worker finished copying the submitted eye textures. It now waits for completion,
+as the Quest frame path already did, and wakes a waiting submitter on shutdown.
+The concurrency regression fails with the former asynchronous flat path and
+passes with the wait. This closes an early-return window for texture reuse;
+hardware effectiveness and the separate SteamVR sync-texture warnings still
+require validation. Neither the earlier transient smooth period nor the unit
+test establishes that intermittent snapping is fixed.

@@ -43,6 +43,16 @@ compile() {
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Ibuild/vr/include -Itools/vr/src \
             -o build/vr/test_presenter_image tools/vr/tests/test_presenter_image.cpp
         build/vr/test_presenter_image
+        cc -O2 -Itools/vr/third_party/wayland -c tools/vr/src/wayland_client_stub.c -o build/vr/test_wayland.o
+        cc -O2 -Itools/vr/third_party/wayland -c app/src/main/cpp/waylandcomp/generated/xdg-shell-protocol.c -o build/vr/test_xdg.o
+        c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -pthread \
+            -Ibuild/vr/include -Itools/vr/third_party/wayland -Iapp/src/main/cpp/waylandcomp/generated \
+            -o build/vr/test_presenter_completion tools/vr/tests/test_presenter_completion.cpp \
+            build/vr/test_wayland.o build/vr/test_xdg.o -ldl
+        build/vr/test_presenter_completion
+        c++ -std=c++17 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -pthread \
+            -o build/vr/test_xr_tracking tools/vr/tests/test_xr_tracking.cpp
+        build/vr/test_xr_tracking
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools/vr/src \
             -o build/vr/test_spatial_tracking tools/vr/tests/test_spatial_tracking.cpp
         build/vr/test_spatial_tracking
