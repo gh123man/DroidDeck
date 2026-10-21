@@ -43,7 +43,7 @@ All display modes depend on the phone's video output, the cable/adapter, and And
 | VITURE Beast | 1080p or 1200p per eye; SDK handles native/bypass display modes | Brightness, volume, dimming toggle |
 | VITURE Pro 2 | 1080p per eye; 2D and SBS | Brightness and volume; no electrochromic-film control |
 | RayNeo Air/GT | 2D/SBS switching; resolution and refresh follow available Android modes | Orientation calibration; no app brightness, volume, or dimming commands |
-| XREAL One | Native 1080p/60 Hz and SBS mode requests; physical display confirmation required | No app brightness, volume, or dimming controls until One-specific validation |
+| XREAL One | Firmware-native 2D and SBS mode requests; refresh follows Android's advertised modes; physical display confirmation required | No app brightness, volume, or dimming controls until One-specific validation |
 | XREAL 1S | Supported 1S display-mode commands, including native 1200p/60 Hz and SBS | Brightness and dimming toggle; no app volume command |
 | Rokid Max | 1080p at 60 or 120 Hz in 2D; SBS at 1080p/60, 1200p/60, or 1200p/90 | Brightness; volume follows Android's USB audio volume; no dimming film |
 | Rokid Air | 1080p/60 in 2D and SBS | Brightness; volume follows Android's USB audio volume |
@@ -88,7 +88,7 @@ The capability definitions are maintained in [VITURE models](../app/src/main/jav
 
 ## XREAL One test build
 
-The One profile matches only normal USB `3318:0438`, uses the published 50° diagonal FOV, and returns to native display mode 2 (1920×1080 at 60 Hz), never the 1S-specific mode 29. The shared TCP transport and orientation filter are reused; the filter's directed-motion captures were made on 1S, so One sensor-axis alignment and drift remain unverified. No firmware writes, calibration changes on the glasses, Eye support, or positional tracking are added.
+The One profile matches only normal USB `3318:0438` and uses the published 50° diagonal FOV. Returning to 2D lets the firmware restore its native mode; the tested One reports mode 9 (1920×1080 at 90 Hz) and rejects the legacy mode-2 EDID command. Refresh selection follows Android's advertised modes. The shared TCP transport and orientation filter are reused; the filter's directed-motion captures were made on 1S, so One sensor-axis alignment and drift remain unverified. No firmware writes, calibration changes on the glasses, Eye support, or positional tracking are added.
 
 Test on the target Android device before claiming support:
 

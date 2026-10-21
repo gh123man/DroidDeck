@@ -246,3 +246,38 @@ One Pro is not enabled or claimed as tested.
 A separate experimental profile now recognizes normal One `3318:0438`; recovery `0437` remains rejected. One uses the manufacturer's 50° FOV and native mode 2, while 1S keeps 52° and mode 29. Family-based routing shares the TCP connection without requesting Android USB-interface access. Outgoing mode requests are checked against the selected profile before any control writes.
 
 This is an unvalidated hardware extension: the existing 1S sensor basis/fusion is reused provisionally. No One hardware captures or Retroid Pocket 6 tests have been performed. One brightness and dimming are disabled pending verification, and Eye/6DoF remains unsupported. See the [test checklist](../smart-glasses-support.md#xreal-one-test-build).
+
+### Connection and stereo-switching regression fixes
+
+Investigation of a One / Retroid Pocket 6 connection-error report found that the
+startup display query rejected both temporary empty properties and numeric modes
+outside the outgoing command whitelist. It now polls temporary empty properties
+with a bounded timeout and accepts reported numeric modes without authorizing
+those modes for writes. Malformed replies and device errors still fail.
+
+The original switching sequence also waited for SET_INPUT to change the EDID
+before allowing SET_DISPLAY. One now permits an explicit SBS EDID request when
+the reported mode differs from the target. Busy status 5001 causes a bounded retry;
+an acknowledged write is not repeated, and success still requires GET_DISPLAY
+to report the target. The 1S path retains its captured SET_INPUT-driven stereo
+transition. Android's physical display confirmation remains separate.
+
+Focused JVM tests reproduce the previous failures and cover startup, unmanaged
+mode reads, explicit SBS/native switching, busy replies, rejection, and stalled
+transitions.
+
+Live investigation on a Retroid Pocket 6 running Android 13 confirmed the startup
+failure: GET_DISPLAY returned `22 02 10 09`, which the old whitelist rejected.
+Android exposed both Ethernet interfaces, including the direct control route at
+`169.254.2.10/24`. A diagnostic using the corrected protocol accepted mode 9 and
+read 2,006 valid IMU reports in about two seconds. An SBS request returned mode 5,
+and Android confirmed 3840×1080 at 60 Hz with the sensor stream still active.
+
+Returning to regular input restored mode 9 (1920×1080 at 90 Hz). Sending the
+legacy mode-2 EDID afterward failed with `22 03 08 91 4e` (10001). One therefore
+uses SET_INPUT to restore firmware-native 2D instead of writing legacy 2/3/4
+EDIDs; Android selects from the resulting advertised refresh rates. A regression
+test covers this captured native-mode response and ensures no legacy EDID is
+written. The 1S behavior is unchanged. These protocol checks alone do not
+establish correct tracking axes, a successful SteamVR session, or long-session
+stability.

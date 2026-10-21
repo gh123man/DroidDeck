@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-21",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "purpose": "Local hardware validation of PR #1 connection and VR display fixes",
+  "source": "Source files in the enclosing commit; source hashes below",
+  "source_sha256": {
+    "app/src/main/java/com/droiddeck/launcher/glasses/XrealControl.kt": "9076d83af454f02ee1ae373c19765a60721e1f77b4952a1dd0d00ac86eea0dd5",
+    "app/src/main/java/com/droiddeck/launcher/glasses/XrealProtocol.kt": "af08cf1ee0abe8a7e86f854bab5273b87843320886b2a53708cdbf0647578164"
+  },
+  "apk_sha256": "164a2c7be5e76bf010ebb7635c38f60398d35557b37102ebf7129ceb101aee98",
+  "base_apk_sha256": "d501ded0fd4777c9a0c3f0d71e661005cb27b0e18dccbdb021504fe66d35e591",
+  "signer_sha256": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+  "build_method": "Diagnostic DEX patch of the previously installed XR Dev APK. Kotlin 2.1.0 and D8 8.8.34 compiled the current XrealControl and XrealProtocol classes; dexlib2 2.5.2 replaced only those class families in classes5.dex. Android build-tools 35.0.0 aligned and signed the result with the repository test key.",
+  "payload_validation": "All ZIP entries except classes5.dex and root APK signature entries match the installed APK byte for byte. Existing libraries, runtime assets, resources, manifest, and other DEX files were preserved.",
+  "limitations": [
+    "Not a full Gradle/native rebuild.",
+    "The existing app version and build label are inherited from the installed donor; identify this diagnostic update by APK SHA-256.",
+    "Not a release build or proof of long-session VR stability."
+  ],
+  "pre_install_validation": [
+    "22 focused JVM protocol/model tests pass.",
+    "Mode 9 startup reply captured on hardware.",
+    "SBS mode 5 confirmed physically at 3840x1080/60 Hz.",
+    "Native restoration returns mode 9 without rejected legacy EDID writes.",
+    "Continuous valid IMU reports during both display transitions.",
+    "APK signature verified and matches installed debug app."
+  ]
+}
