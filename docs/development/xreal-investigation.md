@@ -380,3 +380,23 @@ The diagnostic APK installed successfully after deployment-record commit
 was idle. The on-disk runtime still contained the preceding driver/helper, which
 are staged from APK assets when a new session starts. Runtime hash verification,
 lease activity, and sustained wearer comparison remain pending reconnection.
+
+After wireless ADB reconnected, session `2026-10-21-13-steam` started with SBS
+already established at 3840×1080/60 Hz. Both runtime hashes matched the producer
+lease deployment record. The lease activation log and producer socket were
+present. After startup the presenter showed 553–569 frames per ten seconds,
+with zero lease misses and maximum acquisition times of 9.4–12.3 ms. The wearer
+reported improvement but continued snapping. SteamVR still reported roughly
+1,400–1,500 sync-texture acquisition timeouts per 30 seconds. Retaining producer
+ownership is therefore not a complete fix and reduced throughput relative to the
+preceding approximately 60 fps diagnostic.
+
+A subsequent audit found that the presenter reused one binary presentation
+semaphore across every swapchain image. Its copy fence does not establish that
+presentation has consumed that semaphore. Following the
+[Vulkan semaphore reuse guidance](https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html),
+the presenter now allocates one semaphore per swapchain image and selects it by
+the acquired image index. The regression keeps presentation waits pending after
+copy completion and exercises non-sequential image acquisition. Partial semaphore
+allocation failure also releases only successfully created resources. This
+corrects a separate synchronization violation; hardware impact remains untested.

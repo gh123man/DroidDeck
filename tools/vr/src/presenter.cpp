@@ -303,9 +303,8 @@ private:
         DestroyCapture();
         while (!textures_.empty()) Forget(textures_.back().handle);
         if (dev_) {
-            if (swapchain_) vk_.DestroySwapchainKHR(dev_, swapchain_, nullptr);
+            DestroySwapchain();
             if (acquired_) vk_.DestroySemaphore(dev_, acquired_, nullptr);
-            if (rendered_) vk_.DestroySemaphore(dev_, rendered_, nullptr);
             if (fence_) vk_.DestroyFence(dev_, fence_, nullptr);
             if (pool_) vk_.DestroyCommandPool(dev_, pool_, nullptr);
             vk_.DestroyDevice(dev_, nullptr); dev_ = VK_NULL_HANDLE;
@@ -346,9 +345,7 @@ private:
         const auto now = std::chrono::steady_clock::now();
         if (!resized && !encodingChanged && (swapchain_ || now < retryAt_)) return;
         vk_.DeviceWaitIdle(dev_);
-        if (swapchain_) vk_.DestroySwapchainKHR(dev_, swapchain_, nullptr);
-        swapchain_ = VK_NULL_HANDLE;
-        images_.clear();
+        DestroySwapchain();
         if (resized) Log("presenter: panel now %ux%u (was %ux%u)", w, h, width_, height_);
         width_ = w;
         height_ = h;
@@ -542,8 +539,7 @@ private:
         VkFenceCreateInfo fci = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, VK_FENCE_CREATE_SIGNALED_BIT};
         vk_.CreateFence(dev_, &fci, nullptr, &fence_);
         VkSemaphoreCreateInfo semci = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0};
-        vk_.CreateSemaphore(dev_, &semci, nullptr, &acquired_);
-        vk_.CreateSemaphore(dev_, &semci, nullptr, &rendered_);
+        if (vk_.CreateSemaphore(dev_, &semci, nullptr, &acquired_) != VK_SUCCESS) return false;
         Log("presenter: Vulkan on %s, queue family %u", props.deviceName, qfam_);
         return true;
     }
@@ -592,12 +588,38 @@ private:
             return false;
         }
         uint32_t ni = 0;
-        vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, nullptr);
+        if (vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, nullptr) != VK_SUCCESS || !ni) {
+            DestroySwapchain(); return false;
+        }
         images_.resize(ni);
-        vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, images_.data());
+        if (vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, images_.data()) != VK_SUCCESS) {
+            DestroySwapchain(); return false;
+        }
+        images_.resize(ni);
+        if (!CreatePresentSemaphores()) { DestroySwapchain(); return false; }
         Log("presenter: swapchain %ux%u, format %d, %u images, %s", ext.width, ext.height, fmt.format, ni,
             pm == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo");
         return true;
+    }
+
+    bool CreatePresentSemaphores() {
+        rendered_.resize(images_.size(), VK_NULL_HANDLE);
+        VkSemaphoreCreateInfo info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        for (auto &semaphore : rendered_) {
+            VkSemaphore created = VK_NULL_HANDLE;
+            if (vk_.CreateSemaphore(dev_, &info, nullptr, &created) != VK_SUCCESS) return false;
+            semaphore = created;
+        }
+        return true;
+    }
+
+    void DestroySwapchain() {
+        for (auto semaphore : rendered_)
+            if (semaphore) vk_.DestroySemaphore(dev_, semaphore, nullptr);
+        rendered_.clear();
+        if (swapchain_) vk_.DestroySwapchainKHR(dev_, swapchain_, nullptr);
+        swapchain_ = VK_NULL_HANDLE;
+        images_.clear();
     }
 
     int MemoryType(uint32_t bits) {
@@ -817,6 +839,8 @@ private:
             if (said++ < 3) Log("presenter: acquire %d", r);
             return false;
         }
+        // Waiting on acquisition retires this image's previous presentation semaphore wait.
+        const VkSemaphore rendered = rendered_[idx];
         if (vk_.ResetFences(dev_, 1, &fence_) != VK_SUCCESS || vk_.ResetCommandBuffer(cmd_, 0) != VK_SUCCESS) { Fail(); return false; }
         VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
         if (vk_.BeginCommandBuffer(cmd_, &bi) != VK_SUCCESS) { Fail(); return false; }
@@ -857,7 +881,7 @@ private:
                                eye[0] == eye[1] ? 2 : 3, post);
         if (vk_.EndCommandBuffer(cmd_) != VK_SUCCESS) { Fail(); return false; }
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered_};
+        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered};
         if (lease) lease->BeginGpu();
         r = vk_.QueueSubmit(queue_, 1, &si, fence_);
         if (r == VK_SUCCESS) r = vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
@@ -867,7 +891,7 @@ private:
             Fail(); return false;
         }
         if (lease) { lease->EndGpu(); if (!lease->Release()) { Fail(); return false; } }
-        VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered_, 1, &swapchain_, &idx, nullptr};
+        VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered, 1, &swapchain_, &idx, nullptr};
         r = vk_.QueuePresentKHR(queue_, &pi);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
             static int said;
@@ -917,7 +941,8 @@ private:
     VkCommandPool pool_ = VK_NULL_HANDLE;
     VkCommandBuffer cmd_ = VK_NULL_HANDLE;
     VkFence fence_ = VK_NULL_HANDLE;
-    VkSemaphore acquired_ = VK_NULL_HANDLE, rendered_ = VK_NULL_HANDLE;
+    VkSemaphore acquired_ = VK_NULL_HANDLE;
+    std::vector<VkSemaphore> rendered_;
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     VkFormat eyeFormat_ = VK_FORMAT_UNDEFINED;
     VkExtent2D extent_{};
