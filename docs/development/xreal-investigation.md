@@ -348,5 +348,29 @@ The copy-completion diagnostic was pushed and installed using
 The staged driver hash matched the record. Session `2026-10-21-12-steam` sustained
 597–601 presented frames per ten seconds after startup, but SteamVR still reported
 frequent sync-texture acquisition timeouts (over 1,100 suppressed warnings per
-30-second interval). A sustained wearer comparison is pending; this diagnostic
-must not be treated as a confirmed smoothness fix.
+30-second interval). The wearer confirmed that snapping was unchanged. This
+diagnostic did not resolve the issue. A debug/release hypothesis was considered
+but deferred in favor of investigating frame synchronization; no non-debuggable
+APK was installed.
+
+### Retained producer ownership for glasses frames
+
+The global submit counter only waits for preceding work; it does not prevent
+later SteamVR submissions from overwriting the eye textures during a copy. The
+glasses path now uses the existing Quest producer lease: the Vulkan layer drains
+the producer's recorded queues, retains its submission lock across the copy, and
+releases it only after the presenter's GPU fence completes. Unavailable leases
+skip the frame. Failed copies stop presentation instead of showing a potentially
+incomplete image. The fixed-delay/global-counter fallback is bypassed when the
+lease is enabled. An explicit diagnostic override of the lease flag is preserved.
+
+[Linux CI](https://github.com/gh123man/DroidDeck/actions/runs/39677373599) passed
+21 launcher/producer tests, including a real Vulkan delayed-completion and frozen
+overwrite test using Lavapipe. The actual presenter with mocked Vulkan calls
+also verifies retained ownership, missing-lease rejection, and failed-copy
+rejection. Presenter completion, fence tracking, compositor submission, and
+semaphore bridge regressions passed. The driver and lease regression cross-compile
+for ARM64 Linux. The hardware diagnostic is identified by
+[`2026-10-21-xreal-producer-lease.json`](deployments/2026-10-21-xreal-producer-lease.json);
+the installed Vulkan layer already contains the lease server, so only the driver
+and launcher helper assets change. Hardware effectiveness remains unconfirmed.
