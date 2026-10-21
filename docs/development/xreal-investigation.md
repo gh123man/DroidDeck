@@ -243,9 +243,9 @@ One Pro is not enabled or claimed as tested.
 
 ## XREAL One test adapter (2026-10-21)
 
-A separate experimental profile now recognizes normal One `3318:0438`; recovery `0437` remains rejected. One uses the manufacturer's 50° FOV and native mode 2, while 1S keeps 52° and mode 29. Family-based routing shares the TCP connection without requesting Android USB-interface access. Outgoing mode requests are checked against the selected profile before any control writes.
+A separate experimental profile now recognizes normal One `3318:0438`; recovery `0437` remains rejected. One uses the manufacturer's 50° FOV and firmware-native 2D, while 1S keeps 52° and mode 29. Family-based routing shares the TCP connection without requesting Android USB-interface access. Outgoing mode requests are checked against the selected profile before any control writes.
 
-This is an unvalidated hardware extension: the existing 1S sensor basis/fusion is reused provisionally. No One hardware captures or Retroid Pocket 6 tests have been performed. One brightness and dimming are disabled pending verification, and Eye/6DoF remains unsupported. See the [test checklist](../smart-glasses-support.md#xreal-one-test-build).
+The existing 1S sensor basis/fusion is reused. Initial One / Retroid Pocket 6 hardware validation is recorded below; long-session stability and quantitative axis/drift validation remain open. One brightness and dimming are disabled pending verification, and Eye/6DoF remains unsupported. See the [test checklist](../smart-glasses-support.md#xreal-one-test-build).
 
 ### Connection and stereo-switching regression fixes
 
@@ -281,3 +281,29 @@ test covers this captured native-mode response and ensures no legacy EDID is
 written. The 1S behavior is unchanged. These protocol checks alone do not
 establish correct tracking axes, a successful SteamVR session, or long-session
 stability.
+
+### Wearer validation and remaining frame-pacing issue
+
+The diagnostic XR Dev APK identified in
+[`2026-10-21-xreal-one-retroid-debug.json`](deployments/2026-10-21-xreal-one-retroid-debug.json)
+was installed after its source and deployment record were pushed. Settings then
+reported connected/control-ready with no communication error. SteamVR reached
+mode 5, physical 3840×1080/60 Hz, with tracking active. The wearer confirmed a VR
+image and working head tracking, but reported stutters/jumps. This is functional
+VR validation, not a claim that motion is smooth.
+
+A two-second in-app capture counted 2,000 poses (999.5 Hz). The read-only
+`tools/xreal/ReportTiming.kt` probe subsequently measured 5,014 IMU samples in five
+seconds during VR: arrival gaps were 0.97 ms median, 3.51 ms p99, and 6.40 ms
+maximum, with no gaps over 10 ms. A separate TCP_QUICKACK comparison did not
+improve those figures. These independent socket captures do not measure
+motion-to-photon latency or exclude pauses in downstream pose delivery.
+
+Android's external-display presentation history contained 122 intervals near
+16.7 ms and three near 33.4 ms. The app's compositor logged roughly 58–60 fps;
+SteamVR's presenter logged about 60 fps and occasional compositor
+`WaitForAcquire timed out` warnings. The driver initially advertised 120 Hz before
+the automatic SBS switch updated its reported panel rate to 60 Hz; SteamVR's
+startup display log selected 120 Hz. These are leads for further frame-pacing
+investigation, not a proven cause of the wearer's stutter. Sensor filtering and
+TCP acknowledgement behavior were not changed on that evidence.
