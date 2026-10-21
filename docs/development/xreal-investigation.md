@@ -342,3 +342,11 @@ passes with the wait. This closes an early-return window for texture reuse;
 hardware effectiveness and the separate SteamVR sync-texture warnings still
 require validation. Neither the earlier transient smooth period nor the unit
 test establishes that intermittent snapping is fixed.
+
+The copy-completion diagnostic was pushed and installed using
+[`2026-10-21-xreal-present-completion.json`](deployments/2026-10-21-xreal-present-completion.json).
+The staged driver hash matched the record. Session `2026-10-21-12-steam` sustained
+597–601 presented frames per ten seconds after startup, but SteamVR still reported
+frequent sync-texture acquisition timeouts (over 1,100 suppressed warnings per
+30-second interval). A sustained wearer comparison is pending; this diagnostic
+must not be treated as a confirmed smoothness fix.
