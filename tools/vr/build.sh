@@ -45,11 +45,13 @@ compile() {
         build/vr/test_presenter_image
         cc -O2 -Itools/vr/third_party/wayland -c tools/vr/src/wayland_client_stub.c -o build/vr/test_wayland.o
         cc -O2 -Itools/vr/third_party/wayland -c app/src/main/cpp/waylandcomp/generated/xdg-shell-protocol.c -o build/vr/test_xdg.o
-        c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -pthread \
-            -Ibuild/vr/include -Itools/vr/third_party/wayland -Iapp/src/main/cpp/waylandcomp/generated \
-            -o build/vr/test_presenter_completion tools/vr/tests/test_presenter_completion.cpp \
-            build/vr/test_wayland.o build/vr/test_xdg.o -ldl
-        build/vr/test_presenter_completion
+        for test in presenter_completion presenter_lease; do
+            c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -pthread \
+                -Ibuild/vr/include -Itools/vr/third_party/wayland -Iapp/src/main/cpp/waylandcomp/generated \
+                -o build/vr/test_$test tools/vr/tests/test_$test.cpp \
+                build/vr/test_wayland.o build/vr/test_xdg.o -ldl
+            build/vr/test_$test
+        done
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -pthread \
             -o build/vr/test_xr_tracking tools/vr/tests/test_xr_tracking.cpp
         build/vr/test_xr_tracking

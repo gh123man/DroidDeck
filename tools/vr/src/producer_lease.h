@@ -127,7 +127,7 @@ struct droiddeck_producer_server {
 };
 
 static void *droiddeck_producer_serve(void *argument) {
-    struct droiddeck_producer_server *server = argument;
+    struct droiddeck_producer_server *server = (struct droiddeck_producer_server *)argument;
     uint64_t ticket = 0;
     for (;;) {
         int connection = accept4(server->listener, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);

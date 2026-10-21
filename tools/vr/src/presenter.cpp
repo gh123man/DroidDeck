@@ -28,6 +28,7 @@ typedef unsigned long VisualID;
 #include <fcntl.h>
 #include <linux/futex.h>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -220,6 +221,9 @@ private:
     void Run() {
         const char *mode = getenv("DROIDDECK_VR_PRESENT");
         frameChannel_ = FrameChannelRequested();
+        const char *lease = getenv("DROIDDECK_VR_PRODUCER_LEASE");
+        producerLease_ = lease && !strcmp(lease, "1");
+        if (!frameChannel_ && producerLease_) Log("presenter: eye textures retained under producer lease until GPU copy completes");
         if (!frameChannel_) wayland_ = !(mode && !strcmp(mode, "x11")) && InitWayland();
         if (!frameChannel_ && !wayland_ && !InitWindow()) {
             Log("presenter: unavailable, frames are not shown");
@@ -259,7 +263,7 @@ private:
             if (wl_) { wl_display_dispatch_pending(wl_); wl_display_flush(wl_); }
             for (auto &p : imports) Import(p);
             for (auto h : removals) Forget(h);
-            if (f.texture[0] && !frameChannel_ && tracked) {
+            if (f.texture[0] && !frameChannel_ && !producerLease_ && tracked) {
                 const auto start = std::chrono::steady_clock::now();
                 const int r = WaitDrawn(mark, start + kDrawnTimeout);
                 if (r > 0) {
@@ -268,7 +272,7 @@ private:
                 } else if (r < 0) {
                     late++;
                 }
-            } else if (f.texture[0] && !frameChannel_) {
+            } else if (f.texture[0] && !frameChannel_ && !producerLease_) {
                 std::this_thread::sleep_until(at + guard_);
             }
             if (!frameChannel_) {
@@ -282,11 +286,13 @@ private:
             }
             auto now = std::chrono::steady_clock::now();
             if (now - lastLog > std::chrono::seconds(10)) {
-                Log("presenter: %llu frames shown, %llu submitted, %llu waited for the GPU (longest %.1f ms), %llu late (last 10 s)",
+                Log("presenter: %llu frames shown, %llu submitted, %llu waited for the GPU (longest %.1f ms), %llu late, producer lease %.1f ms max / %llu misses (last 10 s)",
                     (unsigned long long)shown, (unsigned long long)submitted_.exchange(0), (unsigned long long)waited,
-                    std::chrono::duration<double, std::milli>(longest).count(), (unsigned long long)late);
+                    std::chrono::duration<double, std::milli>(longest).count(), (unsigned long long)late,
+                    std::chrono::duration<double, std::milli>(longestLease_).count(), (unsigned long long)leaseMisses_);
                 shown = waited = late = 0;
                 longest = {};
+                longestLease_ = {}; leaseMisses_ = 0;
                 lastLog = now;
             }
         }
@@ -795,7 +801,15 @@ private:
         const Imported *eye[2] = {Find(f.texture[0]), Find(f.texture[1])};
         if (!eye[0] || !eye[1] || !swapchain_) return false;
         if (SrgbEyeFormat(eye[0]->format) != SrgbEyeFormat(eye[1]->format)) return false;
-        vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+        std::optional<CaptureLease> lease;
+        if (producerLease_) {
+            if (!eye[0]->producerPid || eye[0]->producerPid != eye[1]->producerPid) { leaseMisses_++; return false; }
+            const auto start = std::chrono::steady_clock::now();
+            lease.emplace(eye[0]->producerPid);
+            longestLease_ = std::max(longestLease_, std::chrono::steady_clock::now() - start);
+            if (!lease->Acquired()) { leaseMisses_++; return false; }
+        }
+        if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
         uint32_t idx = 0;
         VkResult r = vk_.AcquireNextImageKHR(dev_, swapchain_, 100000000ull, acquired_, VK_NULL_HANDLE, &idx);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
@@ -803,10 +817,9 @@ private:
             if (said++ < 3) Log("presenter: acquire %d", r);
             return false;
         }
-        vk_.ResetFences(dev_, 1, &fence_);
-        vk_.ResetCommandBuffer(cmd_, 0);
+        if (vk_.ResetFences(dev_, 1, &fence_) != VK_SUCCESS || vk_.ResetCommandBuffer(cmd_, 0) != VK_SUCCESS) { Fail(); return false; }
         VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-        vk_.BeginCommandBuffer(cmd_, &bi);
+        if (vk_.BeginCommandBuffer(cmd_, &bi) != VK_SUCCESS) { Fail(); return false; }
         VkImage dst = images_[idx];
         VkImageMemoryBarrier pre[3] = {
             Barrier(dst, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT),
@@ -842,14 +855,18 @@ private:
                     VK_QUEUE_FAMILY_EXTERNAL)};
         vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr,
                                eye[0] == eye[1] ? 2 : 3, post);
-        vk_.EndCommandBuffer(cmd_);
+        if (vk_.EndCommandBuffer(cmd_) != VK_SUCCESS) { Fail(); return false; }
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered_};
-        if ((r = vk_.QueueSubmit(queue_, 1, &si, fence_)) != VK_SUCCESS) { Log("presenter: submit %d", r); return false; }
-        if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, (uint64_t)std::chrono::nanoseconds(kDrawnTimeout).count()) == VK_TIMEOUT) {
-            static int said;
-            if (said++ < 3) Log("presenter: the copy took over %lld ms; showing it anyway", (long long)kDrawnTimeout.count());
+        if (lease) lease->BeginGpu();
+        r = vk_.QueueSubmit(queue_, 1, &si, fence_);
+        if (r == VK_SUCCESS) r = vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+        if (r != VK_SUCCESS) {
+            if (lease && vk_.DeviceWaitIdle(dev_) == VK_SUCCESS) lease->EndGpu();
+            Log("presenter: GPU copy failed %d", r);
+            Fail(); return false;
         }
+        if (lease) { lease->EndGpu(); if (!lease->Release()) { Fail(); return false; } }
         VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered_, 1, &swapchain_, &idx, nullptr};
         r = vk_.QueuePresentKHR(queue_, &pi);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
@@ -860,6 +877,9 @@ private:
     }
 
     std::mutex mutex_;
+    bool producerLease_ = false;
+    uint64_t leaseMisses_ = 0;
+    std::chrono::steady_clock::duration longestLease_{};
     std::condition_variable cv_;
     std::vector<PendingImport> pending_;
     std::vector<uint64_t> removals_;

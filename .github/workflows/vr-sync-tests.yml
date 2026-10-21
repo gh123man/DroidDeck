@@ -1,0 +1,47 @@
+name: VR synchronization tests
+on:
+  push:
+    paths:
+      - 'tools/vr/**'
+      - 'tools/tests/test_steamvr_helper.py'
+      - 'tools/tests/test_vr_producer_lease.py'
+      - 'tools/linuxfs/overlay/usr/local/bin/droiddeck-steamvr'
+      - '.github/workflows/vr-sync-tests.yml'
+  pull_request:
+    paths:
+      - 'tools/vr/**'
+      - 'tools/tests/test_steamvr_helper.py'
+      - 'tools/tests/test_vr_producer_lease.py'
+      - 'tools/linuxfs/overlay/usr/local/bin/droiddeck-steamvr'
+      - '.github/workflows/vr-sync-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synchronization:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Vulkan test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers
+      - name: Test producer completion and retained ownership
+        run: python3 -m unittest tools.tests.test_steamvr_helper tools.tests.test_vr_producer_lease -v
+      - name: Test presenter and submission ordering
+        run: |
+          mkdir -p /tmp/vr-sync-tests
+          cc -O2 -Itools/vr/third_party/wayland -c tools/vr/src/wayland_client_stub.c -o /tmp/vr-sync-tests/wayland.o
+          cc -O2 -Itools/vr/third_party/wayland -c app/src/main/cpp/waylandcomp/generated/xdg-shell-protocol.c -o /tmp/vr-sync-tests/xdg.o
+          for test in presenter_completion presenter_lease; do
+            c++ -std=c++17 -O2 -pthread -Itools/vr/third_party/wayland -Iapp/src/main/cpp/waylandcomp/generated \
+              tools/vr/tests/test_${test}.cpp /tmp/vr-sync-tests/wayland.o /tmp/vr-sync-tests/xdg.o -ldl -o /tmp/vr-sync-tests/$test
+            /tmp/vr-sync-tests/$test
+          done
+          for test in fence_tracker compositor_submit semaphore_layer; do
+            cc -std=c11 -O2 -pthread -Itools/vr/src tools/vr/tests/test_${test}.c -ldl -o /tmp/vr-sync-tests/$test
+            /tmp/vr-sync-tests/$test
+          done
