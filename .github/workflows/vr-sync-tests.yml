@@ -4,6 +4,7 @@ on:
     paths:
       - 'tools/vr/**'
       - 'app/src/main/cpp/waylandcomp/src/vk_present.c'
+      - 'app/src/main/cpp/CMakeLists.txt'
       - 'tools/tests/test_android_present_semaphores.py'
       - 'tools/tests/test_steamvr_helper.py'
       - 'tools/tests/test_vr_producer_lease.py'
@@ -13,6 +14,7 @@ on:
     paths:
       - 'tools/vr/**'
       - 'app/src/main/cpp/waylandcomp/src/vk_present.c'
+      - 'app/src/main/cpp/CMakeLists.txt'
       - 'tools/tests/test_android_present_semaphores.py'
       - 'tools/tests/test_steamvr_helper.py'
       - 'tools/tests/test_vr_producer_lease.py'
@@ -64,7 +66,7 @@ jobs:
           cmake -S app/src/main/cpp -B /tmp/android-compositor -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 \
-            -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Debug
+            -DANDROID_STL=c++_shared -DCMAKE_BUILD_TYPE=Debug -DDROIDDECK_BUILD_QUEST_XR=OFF
           cmake --build /tmp/android-compositor --target droiddeckwayland --parallel 4
           mkdir -p /tmp/compositor-artifact
           cp /tmp/android-compositor/waylandcomp/libdroiddeckwayland.so /tmp/compositor-artifact/

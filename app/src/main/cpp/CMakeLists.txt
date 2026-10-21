@@ -30,7 +30,10 @@ string(SUBSTRING "${DDFG_CHAIN_HASH_FULL}" 0 12 DDFG_CHAIN_HASH)
 message(STATUS "dd-fg chain: win-fg ${DDFG_UPSTREAM} (src ${DDFG_CHAIN_HASH})")
 
 add_subdirectory(waylandcomp)
-add_subdirectory(questxr)
+option(DROIDDECK_BUILD_QUEST_XR "Build the Quest OpenXR bridge" ON)
+if(DROIDDECK_BUILD_QUEST_XR)
+    add_subdirectory(questxr)
+endif()
 add_library(sdnative SHARED sdnative/sdnative.c)
 target_link_libraries(sdnative log)
 
