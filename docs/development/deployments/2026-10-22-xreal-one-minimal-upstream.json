@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-22",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "version": "0.6.0 (15)",
+  "source_commit": "0d38eb162dd9123b752ac41916cc736ce3c4b632",
+  "upstream_commit": "7b7c978edde6371f6ac0cf1b75a064dcbfc48887",
+  "pull_request": "https://github.com/gh123man/DroidDeck/pull/2",
+  "ci_url": "https://github.com/gh123man/DroidDeck/actions/runs/39849939588/attempts/2",
+  "ci_apk_sha256": "33f0b528d3c9d679ea6c05a7149a6efe5beec6696b2eb8d97957d6d70736cb3c",
+  "apk_sha256": "78f07e25497fe1515926090a1c1bbd69bd3cc97e9e98e6e5b36e14664fe61794",
+  "runtime_hashes": {
+    "assets/linuxfs/usr/local/bin/droiddeck-steamvr": "f916aaf32611f70970394487a9d0499ace17c56b0580d1d8ef4eaaf47d9a1d30",
+    "assets/linuxfs/usr/local/lib/droiddeck-vr/droiddeck/bin/linuxarm64/driver_droiddeck.so": "f79d864de2305b63f78a91328d4ec36e7c99c29cd47d66acb8a4a0e417b2ec4e",
+    "assets/linuxfs/usr/local/lib/droiddeck-vr/layer/libVkLayer_droiddeck_vr.so": "2b685431fa187d4024b592f1f7568a25298cbdb1646b243ac5d2aba741a8bfb6",
+    "lib/arm64-v8a/libdroiddeckwayland.so": "dbe66fda0590262515324dfed99135f04d85f807dcd2dd47431940b03a4338e1"
+  },
+  "signer_sha256": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+  "packaging": "CI release APK with only manifest package/authority/task identifiers changed to the existing test-app slot; re-signed with the same test key. Compiled code, resources, native libraries, and runtime assets are byte-identical to CI.",
+  "validation": [
+    "CI APK compilation and runtime checks passed.",
+    "All 2167 JVM/Robolectric tests passed, including all 62 tests in the four changed suites.",
+    "APK payload comparison, Android signature verification, package/version check, and alignment verification passed."
+  ],
+  "hardware_verification": "Pending this recorded deployment.",
+  "scope": "Minimal device support only. No diagnostic, rendering, synchronization, or optimization changes from the investigation PR."
+}
