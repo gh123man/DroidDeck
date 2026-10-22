@@ -9,6 +9,8 @@ shared runtime directory. `capture.py` only writes that diagnostic configuration
 and reads app-owned results using ADB; it does not execute Linux guest commands.
 
 ```sh
+python3 tools/motion/capture.py enable
+# Restart XR Dev and SteamVR once after enabling.
 python3 tools/motion/capture.py status
 python3 tools/motion/capture.py arm --mode live --trace on --seconds 25
 # After the capture has exported; use the run number returned by arm:
@@ -17,7 +19,9 @@ python3 tools/motion/analyze.py '/tmp/motion-RUN/*.bin' --output /tmp/motion-RUN
 ```
 
 Set `ADB` to the adb executable and optionally `ANDROID_SERIAL`. This tool targets
-only `com.droiddeck.launcher.debug`. Each process must acknowledge the same run,
+only `com.droiddeck.launcher.debug`. With no `motion-enabled` marker at startup,
+there is no controller thread, polling, status-file I/O or trace allocation.
+Use `capture.py disable` and restart after experimentation. Each process must acknowledge the same run,
 mode and absolute CLOCK_MONOTONIC window. The tool checks both controllers are
 advancing before arming. Android publication timestamps and joined driver reads
 provide an additional cross-process clock check; the glasses' sensor clock is

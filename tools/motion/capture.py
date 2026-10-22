@@ -78,6 +78,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('status')
+    commands.add_parser('enable')
+    commands.add_parser('disable')
     a = commands.add_parser('arm')
     a.add_argument('--mode', choices=('live','fixed','sine'), default='live')
     a.add_argument('--trace', choices=('on','off'), default='on')
@@ -85,7 +87,14 @@ def main():
     a.add_argument('--delay', type=float, default=10)
     c = commands.add_parser('collect'); c.add_argument('run', type=int); c.add_argument('output', type=Path)
     args = parser.parse_args()
-    if args.command == 'status': result = statuses()
+    if args.command == 'enable':
+        shell('mkdir', '-p', ROOT)
+        shell('touch', f'{ROOT}/motion-enabled')
+        result = dict(enabled=True, next='Restart the XR Dev app and SteamVR to start the diagnostic controllers.')
+    elif args.command == 'disable':
+        shell('rm', '-f', f'{ROOT}/motion-enabled', f'{ROOT}/motion-control')
+        result = dict(enabled=False, next='Restart the XR Dev app and SteamVR to stop the controllers and reclaim buffers.')
+    elif args.command == 'status': result = statuses()
     elif args.command == 'arm':
         if not .1 <= args.seconds <= 30 or not 3 <= args.delay <= 120: parser.error('seconds must be 0.1–30; delay 3–120')
         result = arm(('live','fixed','sine').index(args.mode), args.trace == 'on', args.seconds, args.delay)

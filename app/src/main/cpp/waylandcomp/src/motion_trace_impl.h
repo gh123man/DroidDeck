@@ -77,6 +77,7 @@ void dd_motion_yaw(unsigned mode, int64_t epoch, int64_t now, double q[4]) {
 
 uint64_t dd_motion_source(uint64_t sensor_ns, int64_t received_ns, uint32_t flags,
                           const double values[10]) {
+    if (!__atomic_load_n(&dd_mt.initialized, __ATOMIC_ACQUIRE)) return 0;
     dd_mt_source = __atomic_add_fetch(&dd_mt.source_serial, 1, __ATOMIC_RELAXED);
     double v[12];
     memcpy(v, values, 10 * sizeof(double));
@@ -185,6 +186,9 @@ static void *dd_mt_control(void *unused) {
 }
 
 void dd_motion_start(const char *directory, const char *process) {
+    char enabled[768];
+    snprintf(enabled, sizeof(enabled), "%s/motion-enabled", directory);
+    if (access(enabled, F_OK) != 0) return;
     if (__atomic_exchange_n(&dd_mt.initialized, 1, __ATOMIC_ACQ_REL)) return;
     snprintf(dd_mt.directory, sizeof(dd_mt.directory), "%s", directory);
     snprintf(dd_mt.process, sizeof(dd_mt.process), "%s", process);

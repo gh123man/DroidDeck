@@ -24,6 +24,9 @@ static void *writer(void *arg) {
 }
 int main(void) {
     char dir[] = "/tmp/dd-motion-test-XXXXXX"; assert(mkdtemp(dir));
+    dd_motion_start(dir, "test"); assert(dd_mt.initialized == 0);
+    char enabled[768]; snprintf(enabled, sizeof(enabled), "%s/motion-enabled", dir);
+    FILE *enable = fopen(enabled, "w"); assert(enable); fclose(enable);
     dd_motion_start(dir, "test");
     int64_t epoch = dd_motion_now() + 600000000;
     arm(dir, 1, 1, epoch);
