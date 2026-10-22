@@ -22,6 +22,13 @@
     "All 2167 JVM/Robolectric tests passed, including all 62 tests in the four changed suites.",
     "APK payload comparison, Android signature verification, package/version check, and alignment verification passed."
   ],
-  "hardware_verification": "Pending this recorded deployment.",
+  "hardware_verification": {
+    "installation": "Succeeded; installed APK SHA256 matches recorded hash.",
+    "launch": "MainActivity launched successfully.",
+    "reported_build": "remote clean \u00b7 codex/xreal-one-device-support at 0d38eb1",
+    "reported_version": "0.6.0",
+    "runtime": "r9 already installed",
+    "glasses": "Android reports present=false and connected=false; connection/SBS/SteamVR verification awaits physical reconnection."
+  },
   "scope": "Minimal device support only. No diagnostic, rendering, synchronization, or optimization changes from the investigation PR."
 }
