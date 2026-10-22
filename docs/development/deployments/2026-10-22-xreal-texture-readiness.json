@@ -25,7 +25,7 @@
   "limitations": [
     "Donor APK packaging, not full Gradle build; donor version label inherited.",
     "Producer readiness uses bounded object/command metadata and a short metadata mutex; missing/unsupported mappings fail closed. Pixel hashes provide independent replay verification.",
-    "Hardware verification pending this tracked deployment.",
     "Quest frame capture retains untargeted leases; this test targets flat XREAL SteamVR presentation."
-  ]
+  ],
+  "hardware_verification": "../xreal-texture-readiness-results-2026-10-22.json"
 }

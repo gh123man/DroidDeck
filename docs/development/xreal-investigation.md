@@ -714,7 +714,7 @@ has overhead, and unsupported extension writes/unusual memory aliases are outsid
 the monitored path. The automatic sweep ended and tracking returned to live.
 
 
-### Texture-generation ordering fix (hardware comparison pending)
+### Texture-generation ordering fix and hardware verification
 
 Source `0a0d708cb1d3126995f968f19b294501a7093414` reserves a submission generation
 at `GetNextSwapTextureSetIndex`, consumes that reservation once at SubmitLayer,
@@ -738,5 +738,32 @@ Deployment `deployments/2026-10-22-xreal-texture-readiness.json` was pushed befo
 installation. APK SHA256
 `1597373fa335cb8059bd8a73176ad12cefefe8be01c5637fb4f35fb7fdfc9a2b`
 was verified on the Retroid. Only the Linux driver and Vulkan-layer assets changed.
-Android currently reports no glasses attached; the same synthetic/pixel capture
-is pending reconnection. Do not claim the replay failure is fixed on hardware yet.
+Session `2026-10-22-06-steam` verified the staged driver/layer hashes and ran at
+3840×1080, 60 Hz. Two identical 25-second synthetic sweeps, runs `1792690484321`
+and `1792690782919`, captured 1,077 and 1,109 source images with **zero exact
+replays**, versus 178 of 1,313 images in the covered pre-fix baseline. All 4,372
+eye-texture targets had positive required generations and matching completed
+writes. Both captures had all 24 streams complete, zero dropped/unregistered
+records, zero coverage gaps, and zero backward submitted-pose steps. Initial
+per-texture intervals and one layer outside the second capture window remain
+inconclusive for interval classification. The pixel hashes remain independent
+of the producer write tracker.
+
+The wearer reported the abrupt snaps seemed much better, with some remaining
+lag. This does not establish sustained 60 fps: the pixel captures delivered
+43.1 and 44.4 new frames/sec. The same synthetic workload without pixel readback
+(run `1792690613246`) delivered 1,184 frames in 25 seconds, 47.4 fps; its p99
+submitted-frame interval was 34.8 ms. With per-frame recording also off (run
+`1792690679635`), two complete existing presenter counter intervals showed 556
+and 458 frames in approximately ten seconds each, about 50.7 fps combined,
+with zero lease misses. Diagnostic controllers remained initialized. Thus
+recording overhead contributes, but does not explain the entire performance
+shortfall. Display refresh at 60 Hz does not imply 60 fresh source frames/sec.
+
+No additional rendering or synchronization change was made during verification.
+Synthetic motion ended automatically and tracking returned to live. The next
+performance investigation should separate producer rendering, generation wait,
+GPU completion/copy, and display pacing with the pixel probe off before changing
+the ownership protocol. Results and raw-capture hashes are in
+`xreal-texture-readiness-results-2026-10-22.json`; raw traces/images remain local
+under `/tmp/droiddeck-motion/ready-1` and `ready-2`.
