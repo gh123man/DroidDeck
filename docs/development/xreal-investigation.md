@@ -421,3 +421,101 @@ Linux presenter and Java/Dex payload are unchanged. Deployment record `a811f967`
 was pushed, but wireless ADB disconnected before installation. The last connection
 port refused reconnect, so this third synchronization diagnostic is not yet
 installed or hardware-validated.
+
+
+### Investigation reset — 2026-10-22
+
+The wearer now reports that snapping is unchanged overall and that the experiments
+have not produced a notable, durable improvement. Earlier reports of improvement
+must not be treated as demonstrated efficacy or proof of a synchronization cause.
+The original connection/SBS fix remains functionally validated; the motion problem
+remains unresolved. Code-level regressions establish specific defects, not their
+causal contribution to the reported symptom.
+
+The Android compositor diagnostic was installed on October 22. Session
+`2026-10-22-01-steam` reached READY with stereo established at 3840×1080/60 Hz.
+The extracted and process-mapped compositor matched SHA-256
+`d5b24a67e4319707c0cf0e465d46c1094fafd7dd0c80fbd8573abaa714d06d50`;
+the Linux driver remained
+`5fcc3e6a2f52c7609a6810bac6e6b6555e87abc56f06a9b6d7edc707d6bfba23`.
+A post-startup interval showed 573 frames per ten seconds and no lease misses.
+This is installation/runtime verification, not evidence that snapping improved.
+
+#### What the existing measurements do and do not establish
+
+- The separate report-socket probe found short arrival gaps during a short capture.
+  It did not observe the application's own receive/filter pipeline end to end.
+- Shared-pose captures did not show a large orientation reset in the sampled
+  windows. They did not record the exact pose supplied by `Hmd::GetPose` or
+  `TrackedDevicePoseUpdated`, nor identify a specific displayed snap.
+- Presenter and compositor rates count different stages. Ten-second averages
+  conceal bursty delays, stale images, repeats, and backward image ordering.
+- SurfaceFlinger intervals describe display-buffer presentation timing, not which
+  head pose or source texture generation the pixels represent.
+- SteamVR sync-texture warnings and tested semaphore defects are leads. Neither
+  has been correlated to an observed snap. Leases also reduced presenter
+  throughput, so they cannot be assumed to be an unconditional improvement.
+- No controlled debug/release comparison was performed. Build mode, thermal load,
+  scene content, and session restarts were not systematically controlled.
+
+#### Measurement-first protocol
+
+Freeze the installed artifact and settings as a named baseline. Make the next
+build diagnostic-only, with the probes switchable in the same binary. Do not
+change filtering, prediction, throttling, or synchronization alongside probes.
+Record scene, display mode, software hashes, thermal state, and capture interval.
+
+Start with correlated pose and frame-request records:
+
+1. At the actual XREAL receive/filter path: sensor timestamp, host receive time,
+   accepted/rejected sample identity, filtered orientation, and filter/recenter
+   reset events. Preserve sample identity through shared-pose publication.
+2. At the driver: the shared sequence actually consumed, read/cache outcome,
+   orientation, validity, timestamp/poseTimeOffset, and the exact pose submitted
+   to SteamVR. The current glasses path sets poseTimeOffset to zero; its effect
+   is an untested timing hypothesis, not a proven fix.
+3. At SubmitLayer/Present: frame-request ID, source texture handles, submitted HMD
+   matrices, layer count, and timestamps. Verify that the runtime supplies useful
+   HMD matrices on this path before relying on them as rendered-pose evidence.
+4. At the presenter: lease acquire/release, copy submission/fence completion,
+   swapchain image index, and present call/result. Record scheduled vsync and
+   PostPresent wait intervals to expose deadlines and stalls hidden by averages.
+
+Use preallocated, prefaulted binary rings with nonblocking per-thread writes,
+explicit overflow counters, and export after capture. Avoid per-sample formatting,
+file flushes, allocation, or new blocking locks. Validate clock domains, including
+sensor-to-host offset/drift; host monotonic timestamps should not be compared to
+sensor ticks without that mapping. Measure probe overhead with tracing off/on.
+Test the analyzer with injected pose resets, delayed samples, and reordered IDs;
+handle quaternion sign equivalence so q/-q is not mistaken for a snap.
+
+Use one unchanged SteamVR scene and a repeatable synthetic yaw trajectory injected
+at the driver pose boundary. Compare live input, fixed pose, and synthetic motion
+in the same diagnostic build. A fixed pose alone is insufficient: it can hide
+motion-dependent image-ordering errors. Synthetic motion that reproduces the snap
+would show that live glasses motion is not necessary for that reproduction; a
+clean synthetic run alone would not prove the rendering path correct under every
+live-input timing pattern.
+
+If exact driver poses jump, trace upstream to sample/filter/publication timing.
+If driver poses are smooth but trustworthy submitted render poses jump, investigate
+SteamVR pose interpretation, prediction, timing, and coordinate conversion. If
+both are smooth while the visible scene jumps, trace image content and presentation
+rather than adding sensor smoothing.
+
+For the latter branch, carry buffer identities into Android commit/composition
+and correlate them with actual presentation feedback. A Present ID labels a CPU
+request, not the contents of a reused source texture: monotonic Present IDs alone
+cannot disprove stale or reordered imagery. Use a diagnostic source-content marker
+or deterministic rendered pattern, preserve it through GPU copying, and validate
+its sequence at the output. A marker painted only after copying would not prove
+source-texture freshness. Software presentation feedback also does not prove the
+optical output of the glasses; if software stages remain correct, a through-lens
+observation is a separate final boundary test.
+
+Make a targeted fix only after finding the first failing boundary. Compare it
+against the instrumented baseline with interleaved repeated runs and an objective
+failure count/trace signature. Keep a change for this symptom only if that signature
+improves reproducibly without unacceptable latency or throughput cost. Investigate
+debug/release or CPU/GPU scheduling if traces show workload-dependent stalls; do
+not use it as another unmeasured build swap.
