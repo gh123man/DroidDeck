@@ -712,3 +712,31 @@ Full classification, exact timelines, capture hashes, and limitations are in
 events; it does not prove that no independent importer bug exists. Instrumentation
 has overhead, and unsupported extension writes/unusual memory aliases are outside
 the monitored path. The automatic sweep ended and tracking returned to live.
+
+
+### Texture-generation ordering fix (hardware comparison pending)
+
+Source `0a0d708cb1d3126995f968f19b294501a7093414` reserves a submission generation
+at `GetNextSwapTextureSetIndex`, consumes that reservation once at SubmitLayer,
+and sends both FD identities and required generations in the copy-lease request.
+The producer leaves its submission lock available until both selected textures
+have fully tracked successful writes at or beyond their reservations, then uses
+the existing completion fences and retained lease. Unrelated work cannot satisfy
+the targets. Failed reservations, unsupported mappings, and deadlines skip copying.
+The readiness tracker also runs without diagnostic recording; the same pixel
+probe remains the independent acceptance metric. Quest capture keeps its legacy
+untargeted lease behavior.
+
+Final-source CI 39811882240 passed Linux/native regressions and the Android build.
+The GPU regression now starts acquisition before the required write is queued,
+lets a delayed producer submit, checks completion and 1,024 actual buffer values,
+and verifies that missing/one-eye-only readiness does not retain the submission
+lock. Protocol and presenter tests cover reservation and both-eye target forwarding.
+Sixteen local analyzer tests pass, including independent right-eye checks.
+
+Deployment `deployments/2026-10-22-xreal-texture-readiness.json` was pushed before
+installation. APK SHA256
+`1597373fa335cb8059bd8a73176ad12cefefe8be01c5637fb4f35fb7fdfc9a2b`
+was verified on the Retroid. Only the Linux driver and Vulkan-layer assets changed.
+Android currently reports no glasses attached; the same synthetic/pixel capture
+is pending reconnection. Do not claim the replay failure is fixed on hardware yet.
