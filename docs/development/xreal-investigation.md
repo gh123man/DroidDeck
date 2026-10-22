@@ -636,3 +636,16 @@ it can therefore use fully observed intervals after unrelated earlier command
 recording gaps. Lease snapshots use a compact memory list and emit outside the
 metadata lock to reduce the recorder's own contention. No GPU waits, barriers,
 submissions, producer lease behavior, or rendering behavior changed.
+
+
+The user-requested repeat `1792683529308` reproduced visible snapping. It captured
+1,343 source images with zero dropped records, including 175 exact older-image
+repeats and no adjacent duplicates. The 169 repeats with both lease snapshots
+again had unchanged observed write serials; all 1,165 changed-image pairs had
+changed serials. Six frames lacked snapshots. Sixty repeated-image cases have a
+positively recorded next write attempt after lease READY and before the driver's
+GPU-copy-completion event (stage 7). This establishes that these draw attempts
+arrived while the lease prevented their submission; it does not exclude other
+unrecorded writes. The old recorder still marks every interval inconclusive.
+Hashes, observed timelines, and explicit limitations are saved in
+`xreal-producer-results-2026-10-22.json`; raw captures remain local.
