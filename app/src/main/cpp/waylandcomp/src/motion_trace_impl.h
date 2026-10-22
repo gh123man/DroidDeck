@@ -108,10 +108,13 @@ void dd_motion_pixels_emit(uint64_t frame, uint64_t texture, const void *rgba) {
     unsigned generation = __atomic_load_n(&dd_mt.active, __ATOMIC_ACQUIRE);
     if (!generation || !dd_motion_pixels_enabled()) return;
     __atomic_store_n(&dd_mt.pixels_busy, 1, __ATOMIC_SEQ_CST);
-    if (__atomic_load_n(&dd_mt.active, __ATOMIC_SEQ_CST) == generation && dd_motion_pixels_recording()) {
+    int64_t now = dd_motion_now();
+    if (__atomic_load_n(&dd_mt.active, __ATOMIC_SEQ_CST) == generation &&
+            now >= __atomic_load_n(&dd_mt.epoch, __ATOMIC_RELAXED) &&
+            now < __atomic_load_n(&dd_mt.end, __ATOMIC_RELAXED)) {
         if (rgba && dd_mt.pixels_count < DD_MOTION_PIXEL_CAPACITY) {
             struct dd_motion_pixels *p = &dd_mt.pixels[dd_mt.pixels_count++];
-            p->ns = dd_motion_now(); p->frame = frame; p->texture = texture;
+            p->ns = now; p->frame = frame; p->texture = texture;
             memcpy(p->rgba, rgba, sizeof(p->rgba));
         } else dd_mt.pixels_dropped++;
     }

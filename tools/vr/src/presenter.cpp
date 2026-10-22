@@ -823,6 +823,8 @@ private:
 
     bool PrepareMotionPixels() {
         if (!dd_motion_pixels_enabled()) return false;
+        if (motionMapping_) return true;
+        if (dd_motion_pixels_recording()) return false;
         DroidDeckXrFrameHeader size{};
         size.width = DD_MOTION_PIXEL_WIDTH; size.height = DD_MOTION_PIXEL_HEIGHT;
         size.bytes = DD_MOTION_PIXEL_BYTES;
