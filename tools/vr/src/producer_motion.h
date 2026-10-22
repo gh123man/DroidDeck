@@ -204,6 +204,7 @@ static int pm_targets_ready(const struct droiddeck_producer_target targets[2]) {
     for(unsigned eye=0;eye<2;eye++)if(!targets[eye].inode || !targets[eye].minimum)return -1;
     int ready=1;
     pthread_mutex_lock(&pm_lock);
+    if(pm_gap_count(PM_META_GAP)) {pm_leave();return -1;}
     for(unsigned eye=0;eye<2;eye++) {
         uint64_t latest=0;
         for(unsigned i=0;i<pm_memory_count;i++) {

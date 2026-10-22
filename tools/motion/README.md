@@ -193,3 +193,32 @@ A submitted drawing command proves queued work, not changed image bytes: clippin
 reused source content, or a zero indirect draw count can still leave pixels equal.
 If a newer completed producer command accompanies a stale image, producer-side
 pixel verification is still needed before blaming external-memory visibility.
+
+
+## Required texture generation ordering
+
+For flat producer-lease presentation, `GetNextSwapTextureSetIndex` reserves the
+next submission-call serial before returning the selected texture index. That
+minimum is attached to the selected handle and carried through SubmitLayer into
+the present request. The version-2 lease protocol names both eyes by FD device
+and inode and includes each minimum serial. The server leaves submission unlocked
+while either eye lacks a fully tracked successful write at or beyond its minimum.
+After both writes are queued, it drains the queues with the existing fences and
+retains ownership until the consumer copy completes. Missing reservations and
+timeouts skip the copy; unrelated submissions cannot satisfy either target.
+The Quest capture path retains its existing untargeted lease behavior.
+
+The producer object/command tracker now also serves the readiness path. It runs
+without the diagnostic marker for flat lease presentation, uses a short metadata
+mutex to avoid losing mappings, and publishes a separate ready serial only for
+complete command recordings. Diagnostic event export remains opt-in. Unknown
+metadata, unsupported recordings, and bounded-table exhaustion fail closed.
+There are no file operations or log messages per draw. This shares the write
+mapping with the probe, so pixel hashes remain the independent acceptance metric.
+
+Texture-identity records now include minimum serial in value 3 (left-eye records
+also include the right minimum in value 4). Flag 1 identifies the right eye;
+flag 0 remains the left eye used by the pixel analyzer. `producer.py` reports
+requested/satisfied/unverified/violated requirements for both eyes. A zero-replay
+capture must also have advancing frames, complete trace export, satisfied targets,
+and varying image content; a stalled stream is not success.

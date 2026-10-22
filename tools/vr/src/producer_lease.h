@@ -118,6 +118,7 @@ static inline int droiddeck_producer_acquire(uint32_t pid, struct droiddeck_prod
 
 static inline int droiddeck_producer_acquire_targets(uint32_t pid, struct droiddeck_producer_lease *lease,
         const struct droiddeck_producer_target targets[2]) {
+    lease->descriptor=-1;lease->ticket=0;
     for (unsigned i=0;i<2;i++) if (!targets[i].inode || !targets[i].minimum) return 0;
     return droiddeck_producer_request(pid, lease, targets, 0);
 }
