@@ -607,3 +607,32 @@ pose-only synthetic run; frame count fell from 1,438 to 1,391 across sessions.
 That comparison is not an isolated overhead measurement. Prior synthetic motion
 with all per-frame recording off still reproduced the visible symptom, but does
 not alone prove identical internal cause. Preserve these distinctions in the PR.
+
+
+### Producer write probe: coverage preflight and first capture
+
+Installed source `e6d64a3f476aa6961340b4c56f054b380a882880` under deployment
+`2026-10-22-xreal-producer-writes.json`. The one-second live preflight
+`1792682773281` matched FD identities between producer and importer, but reported
+4,954 historical coverage gaps. Synthetic run `1792683019511` captured 1,442
+source images with no recorder drops, including 232 exact prior-image repeats.
+Of the 227 repeats joined to consecutive uses of the same FD and both lease
+snapshots, all had unchanged recorded producer write serials. There were 1,204
+changed-image pairs with changed serials; eight frames lacked lease snapshots.
+
+These are observations, **not an exclusion of unrecorded writes**: coverage gaps
+increased from 18,813 to 21,069 during the run, and the strict analyzer marked all
+frames inconclusive. Wearer confirmation for this first sweep was not obtained;
+the user requested a repeat. Do not classify these missing records as absent GPU
+writes or blame imported-memory visibility.
+
+The next recorder revision adds per-command-buffer coverage certificates and
+separate metadata/recording/submission/lease gap counters. It records a summary
+for every submitted command buffer even when the diagnostic lock is unavailable.
+Only a successfully ended recording with an unchanged recording gap epoch can be
+complete. Object-mapping gaps remain disqualifying. The analyzer requires all
+successful command buffers and declared writes between the two lease snapshots;
+it can therefore use fully observed intervals after unrelated earlier command
+recording gaps. Lease snapshots use a compact memory list and emit outside the
+metadata lock to reduce the recorder's own contention. No GPU waits, barriers,
+submissions, producer lease behavior, or rendering behavior changed.

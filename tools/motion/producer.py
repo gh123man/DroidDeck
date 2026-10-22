@@ -17,14 +17,15 @@ def correlate_producer(pixel_report, metas, events):
             raise ValueError('producer/pixel run or window mismatch')
     producers={m['pid'] for m in metas if m['process']=='producer'}
     complete=bool(producers) and all(m.get('finished') and not m['dropped'] and not m['unregistered'] for m in metas)
-    identities={};leases={};health={};writes=[]
+    identities={};leases={};health={};writes=[];summaries=[]
     for e in events:
         if e.kind==15: identities[e.id]=e
-        elif e.kind==14 and e.flags==0: health[e.id]=int(e.v[0])
+        elif e.kind==14 and e.flags==0: health[e.id]=e
         elif e.kind==14 and e.flags==1:
             key=(e.id,e.related,int(e.v[0]))
             if key not in leases or e.v[4]>leases[key].v[4]: leases[key]=e
-        elif e.kind==13:writes.append(e)
+        elif e.kind==13 and e.flags<3:writes.append(e)
+        elif e.kind==13 and e.flags==4:summaries.append(e)
     rows=[]; prior_by_identity={}
     for p in pixel_report['frames']:
         identity=identities.get(p['frame']);row=dict(frame=p['frame'],seconds=p['seconds'],
@@ -34,15 +35,26 @@ def correlate_producer(pixel_report, metas, events):
             key=(inode,device,pid);lease=leases.get((ticket,inode,device))
             row.update(inode=inode,device=device,producer_pid=pid,lease=ticket)
             valid=(complete and inode and pid in producers and lease is not None and
-                   health.get(ticket)!=None and health[ticket]==0 and lease.v[3]==0 and p['layer_match'])
+                   health.get(ticket)!=None and p['layer_match'])
             if lease is not None:
                 serial=int(lease.v[1]);row['completed_write_serial']=serial;row['write_kinds']=int(lease.v[2])
                 old=prior_by_identity.get(key)
                 if valid and old:
-                    previous,old_serial=old
+                    previous,old_serial,old_health=old
+                    h=health[ticket]
+                    coverage=(h.v[0]==0 and old_health.v[0]==0 and lease.v[3]==0)
+                    if h.v[5]==2 and old_health.v[5]==2:
+                        submitted=[e for e in summaries if old_health.ns<e.ns<=h.ns]
+                        coverage=(h.v[1]==0 and old_health.v[1]==0 and h.v[6]<256 and old_health.v[6]<256 and
+                                  all(e.v[1]==1 and e.v[2]==0 and int(e.v[4])==sum(
+                                      w.flags==1 and w.id==e.id and int(w.v[2])==e.related for w in writes)
+                                      for e in submitted))
+                        row['covered_successful_command_buffers']=len(submitted)
+                    row['interval_covered']=bool(coverage)
                     row['previous_texture_frame']=previous['frame']
                     row['new_completed_write']=serial!=old_serial
-                    if p['repeats_frame']==previous['frame']:
+                    if not coverage:pass
+                    elif p['repeats_frame']==previous['frame']:
                         if serial!=old_serial: row['classification']='repeat_despite_new_completed_commands'
                         else:
                             pending=[e for e in writes if e.flags==0 and e.related==inode and int(e.v[0])==device
@@ -50,14 +62,15 @@ def correlate_producer(pixel_report, metas, events):
                             row['write_attempts_since_previous_copy']=[e.id for e in pending]
                             row['classification']='repeat_without_new_completed_commands'
                     else:row['classification']='changed_pixels' if p['repeats_frame'] is None else 'other_repeat'
-                prior_by_identity[key]=(p,serial) if valid else None
+                prior_by_identity[key]=(p,serial,health[ticket]) if valid else None
         rows.append(row)
     return dict(run=capture['run'],producer_present=bool(producers),capture_complete=complete,
-        coverage_gaps=max(health.values(),default=None),counts=dict(Counter(r['classification'] for r in rows)),
+        coverage_gaps=max((e.v[0] for e in health.values()),default=None),counts=dict(Counter(r['classification'] for r in rows)),
         repeated_frames=[r for r in rows if r['repeats_frame'] is not None],
         limits=['Queued draw commands do not guarantee changed pixels; same producer input or clipping remains possible.',
                 'A new completed write with identical imported pixels needs producer-side pixel verification before blaming the importer.',
-                'Missing joins, startup coverage gaps, absent producer traces, and dropped events are inconclusive.'])
+                'Missing joins, lost object mappings, uncovered command submissions, absent producer traces, and dropped events are inconclusive.',
+                'Version 2 can recover from earlier command-recording gaps only when every successful command buffer between leases has complete coverage; metadata gaps remain disqualifying.'])
 
 
 def main():

@@ -162,8 +162,15 @@ ticket for each copied frame. Producer events use the same FD identity.
   flags 0 before entering the existing submission lock, 1 after successful queue
   submission, 2 after failure. Values: FD device, VkImage, command buffer, queue,
   write-command kind mask/count, cumulative coverage gaps.
+  Version 2 adds flags 3/4/5 for every command buffer at attempt/success/failure,
+  even if its metadata lock is unavailable. Related is the command buffer;
+  values are queue, complete recording coverage, metadata gap count, recording
+  gap epoch, emitted write count, current recording gap epoch. A successful
+  EndCommandBuffer and unchanged gap epoch are required for complete coverage.
 - Event 14 (`producer_lease`): id is the protocol's actual granted lease ticket.
-  Flags 0 is coverage health (value 0: gaps). Flags 1 is a shared-memory snapshot:
+  Flags 0 is coverage health (value 0: total gaps). Version 2 adds values 1–6:
+  metadata, command-recording, submission, lease gaps, format version (2), and
+  shared-memory snapshot count. Flags 1 is a shared-memory snapshot:
   related inode; values device, last successful write submission serial, kind mask,
   coverage gaps, and host time of that successful submission observation. This
   runs after the existing per-queue fence waits and before replying READY.
@@ -174,8 +181,13 @@ The probe does not insert GPU commands, fences, waits, barriers, or writes into
 images. It records render-pass color attachments with draw/load-clear commands,
 dynamic color attachments, and explicit image clear/copy/blit/resolve commands.
 Bounded metadata uses a nonblocking try-lock; contention, table capacity limits,
-and unresolved inherited secondary rendering count as coverage gaps. Any gaps
-make exclusion claims inconclusive. Shader/storage writes, extension draw paths,
+and unresolved inherited secondary rendering count as coverage gaps. Metadata gaps
+remain disqualifying. Version 2 can recover from earlier command-recording gaps:
+for each interval between texture uses, every successful command submission must
+have a complete recording and all its declared write events. It does not clear
+or ignore historical gaps. Legacy captures with any gaps remain inconclusive.
+The lease probe snapshots a compact memory list and emits after releasing the
+metadata lock; it no longer walks the whole object table while emitting events. Shader/storage writes, extension draw paths,
 and unusual image aliasing need separate coverage before drawing conclusions.
 A submitted drawing command proves queued work, not changed image bytes: clipping,
 reused source content, or a zero indirect draw count can still leave pixels equal.

@@ -132,6 +132,31 @@ class MotionTraceTests(unittest.TestCase):
         events[-1]=event(37,11,99,14,1,[8,6,8,1,35])
         self.assertEqual(correlate_producer(pixels,[meta],events)['repeated_frames'][0]['classification'],'inconclusive')
 
+    def test_producer_interval_coverage_recovers_only_recording_gaps(self):
+        meta=dict(META,process='producer',pid=77,finished=True)
+        pixels=dict(capture=META,frames=[dict(frame=1,ns=EPOCH+10,seconds=0,
+                     repeats_frame=None,layer_match=True),dict(frame=4,ns=EPOCH+40,seconds=.03,
+                     repeats_frame=1,layer_match=True)])
+        def event(t,i,related,kind,flags,values):
+            return Event(EPOCH+t,i,related,kind,flags,tuple(values)+(0,)*(12-len(values)))
+        events=[event(8,1,99,15,0,[8,10,77]),event(7,10,0,14,0,[50,0,50,0,0,2,3]),
+                event(7,10,99,14,1,[8,5,8,50,6]),event(38,4,99,15,0,[8,11,77]),
+                event(37,11,0,14,0,[51,0,51,0,0,2,3]),event(37,11,99,14,1,[8,5,8,51,6]),
+                event(20,6,100,13,4,[1,1,0,51,1,51]),
+                event(20,6,999,13,1,[8,42,100,1,8,1,51])]
+        def classification():
+            return correlate_producer(pixels,[meta],events)['repeated_frames'][0]['classification']
+        self.assertEqual(classification(),'repeat_without_new_completed_commands')
+        summary=events[-2]
+        events[-2]=event(20,6,100,13,4,[1,0,0,50,1,51])
+        self.assertEqual(classification(),'inconclusive')
+        events[-2]=summary
+        events[-1]=event(20,6,999,13,0,[8,42,100,1,8,1,51])
+        self.assertEqual(classification(),'inconclusive')
+        events[-1]=event(20,6,999,13,1,[8,42,100,1,8,1,51])
+        events[4]=event(37,11,0,14,0,[52,1,51,0,0,2,3])
+        self.assertEqual(classification(),'inconclusive')
+
     def test_binary_roundtrip_and_truncation(self):
         e = driver(1, EPOCH+1_000_000)
         header = HEADER.pack(b'DDMOTION', 1, 128, 1, EPOCH, EPOCH+30_000_000_000,

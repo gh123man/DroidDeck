@@ -6,12 +6,12 @@ struct stat st={0}; int imported=0;
 if(pm_enabled) for(const VkBaseInStructure *p=info->pNext;p;p=p->pNext)
     if(p->sType==VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR) {
         const VkImportMemoryFdInfoKHR *fd=(const void*)p;
-        if(fstat(fd->fd,&st)==0) imported=1;else pm_gap();
+        if(fstat(fd->fd,&st)==0) imported=1;else pm_gap(PM_META_GAP);
     }
 VkResult r=next(d,info,a,result);
-if(r==VK_SUCCESS && imported && pm_enter()) {
+if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
     struct pm_object *o=pm_put(PM_MEMORY,(uint64_t)*result,(uint64_t)d);
-    if(o) {o->a=st.st_ino;o->b=st.st_dev;}pm_leave();
+    if(o && imported) {o->a=st.st_ino;o->b=st.st_dev;}pm_leave();
 }return r;
 }
 
@@ -20,8 +20,8 @@ PFN_vkGetMemoryFdKHR next=(PFN_vkGetMemoryFdKHR)dev_for(d)->gdpa(dev_for(d)->han
 VkResult r=next(d,info,fd);
 if(r==VK_SUCCESS && pm_enabled) {
     struct stat st;
-    if(fstat(*fd,&st)) pm_gap();
-    else if(pm_enter()) {
+    if(fstat(*fd,&st)) pm_gap(PM_META_GAP);
+    else if(pm_enter(PM_META_GAP)) {
         struct pm_object *o=pm_find(PM_MEMORY,(uint64_t)info->memory);
         if(!o)o=pm_put(PM_MEMORY,(uint64_t)info->memory,(uint64_t)d);
         if(o){o->a=st.st_ino;o->b=st.st_dev;}pm_leave();
@@ -38,7 +38,7 @@ next(d,memory,a);
 static VkResult VKAPI_CALL PM_BindImageMemory(VkDevice d,VkImage image,VkDeviceMemory memory,VkDeviceSize offset) {
 PFN_vkBindImageMemory next=(PFN_vkBindImageMemory)dev_for(d)->gdpa(dev_for(d)->handle,"vkBindImageMemory");
 VkResult r=next(d,image,memory,offset);
-if(r==VK_SUCCESS && pm_enter()) {
+if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
 struct pm_object *o=pm_put(PM_IMAGE,(uint64_t)image,(uint64_t)d);if(o){o->a=(uint64_t)memory;o->b=offset;}
 pm_leave();}return r;
 }
@@ -47,7 +47,7 @@ static VkResult VKAPI_CALL PM_BindImageMemory2(VkDevice d,uint32_t count,const V
 PFN_vkBindImageMemory2 next=(PFN_vkBindImageMemory2)dev_for(d)->gdpa(dev_for(d)->handle,"vkBindImageMemory2");
 if(!next) next=(PFN_vkBindImageMemory2)dev_for(d)->gdpa(dev_for(d)->handle,"vkBindImageMemory2KHR");
 VkResult r=next(d,count,info);
-if(r==VK_SUCCESS && pm_enter()) {
+if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
 for(uint32_t i=0;i<count;i++) { VkImage image=info[i].image;VkDeviceMemory memory=info[i].memory;VkDeviceSize offset=info[i].memoryOffset;
 struct pm_object *o=pm_put(PM_IMAGE,(uint64_t)image,(uint64_t)d);if(o){o->a=(uint64_t)memory;o->b=offset;}
 }
@@ -62,7 +62,7 @@ next(d,image,a);
 
 static VkResult VKAPI_CALL PM_CreateImageView(VkDevice d,const VkImageViewCreateInfo *info,const VkAllocationCallbacks *a,VkImageView *view) {
 PFN_vkCreateImageView next=(PFN_vkCreateImageView)dev_for(d)->gdpa(dev_for(d)->handle,"vkCreateImageView");
-VkResult r=next(d,info,a,view);if(r==VK_SUCCESS && pm_enter()) {
+VkResult r=next(d,info,a,view);if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
 struct pm_object *o=pm_put(PM_VIEW,(uint64_t)*view,(uint64_t)d);if(o)o->a=(uint64_t)info->image;pm_leave();}return r;
 }
 
@@ -74,10 +74,10 @@ next(d,view,a);
 
 static VkResult VKAPI_CALL PM_CreateFramebuffer(VkDevice d,const VkFramebufferCreateInfo *info,const VkAllocationCallbacks *a,VkFramebuffer *fb) {
 PFN_vkCreateFramebuffer next=(PFN_vkCreateFramebuffer)dev_for(d)->gdpa(dev_for(d)->handle,"vkCreateFramebuffer");
-VkResult r=next(d,info,a,fb);if(r==VK_SUCCESS && pm_enter()) {
+VkResult r=next(d,info,a,fb);if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
 struct pm_object *o=pm_put(PM_FRAMEBUFFER,(uint64_t)*fb,(uint64_t)d);
 if(o){o->a=info->flags&VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
- if(info->attachmentCount>PM_ATTACHMENTS)pm_gap();
+ if(info->attachmentCount>PM_ATTACHMENTS)pm_gap(PM_META_GAP);
  else if(!o->a) for(uint32_t i=0;i<info->attachmentCount;i++)o->refs[i]=(uint64_t)info->pAttachments[i];
 }pm_leave();}return r;
 }
@@ -90,7 +90,7 @@ next(d,fb,a);
 
 static VkResult VKAPI_CALL PM_CreateRenderPass(VkDevice d,const VkRenderPassCreateInfo *info,const VkAllocationCallbacks *a,VkRenderPass *pass_) {
 PFN_vkCreateRenderPass next=(PFN_vkCreateRenderPass)dev_for(d)->gdpa(dev_for(d)->handle,"vkCreateRenderPass");
-VkResult r=next(d,info,a,pass_);if(r==VK_SUCCESS && pm_enter()) {
+VkResult r=next(d,info,a,pass_);if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
 struct pm_object *o=pm_put(PM_PASS,(uint64_t)*pass_,(uint64_t)d);
 if(o && info->subpassCount<=PM_SUBPASSES && info->attachmentCount<=PM_ATTACHMENTS) {
  o->count=info->subpassCount;
@@ -98,17 +98,17 @@ if(o && info->subpassCount<=PM_SUBPASSES && info->attachmentCount<=PM_ATTACHMENT
  for(uint32_t i=0;i<info->subpassCount;i++) for(uint32_t j=0;j<info->pSubpasses[i].colorAttachmentCount;j++) {
   uint32_t k=info->pSubpasses[i].pColorAttachments[j].attachment;
   if(k<PM_ATTACHMENTS)o->colors[i]|=1u<<k;
-  else if(k!=VK_ATTACHMENT_UNUSED)pm_gap();
+  else if(k!=VK_ATTACHMENT_UNUSED)pm_gap(PM_META_GAP);
   if(info->pSubpasses[i].pResolveAttachments){k=info->pSubpasses[i].pResolveAttachments[j].attachment;
-   if(k<PM_ATTACHMENTS)o->colors[i]|=1u<<k;else if(k!=VK_ATTACHMENT_UNUSED)pm_gap();}
+   if(k<PM_ATTACHMENTS)o->colors[i]|=1u<<k;else if(k!=VK_ATTACHMENT_UNUSED)pm_gap(PM_META_GAP);}
  }
-}else pm_gap();pm_leave();}return r;
+}else pm_gap(PM_META_GAP);pm_leave();}return r;
 }
 
 static VkResult VKAPI_CALL PM_CreateRenderPass2(VkDevice d,const VkRenderPassCreateInfo2 *info,const VkAllocationCallbacks *a,VkRenderPass *pass_) {
 PFN_vkCreateRenderPass2 next=(PFN_vkCreateRenderPass2)dev_for(d)->gdpa(dev_for(d)->handle,"vkCreateRenderPass2");
 if(!next) next=(PFN_vkCreateRenderPass2)dev_for(d)->gdpa(dev_for(d)->handle,"vkCreateRenderPass2KHR");
-VkResult r=next(d,info,a,pass_);if(r==VK_SUCCESS && pm_enter()) {
+VkResult r=next(d,info,a,pass_);if(r==VK_SUCCESS && pm_enter(PM_META_GAP)) {
 struct pm_object *o=pm_put(PM_PASS,(uint64_t)*pass_,(uint64_t)d);
 if(o && info->subpassCount<=PM_SUBPASSES && info->attachmentCount<=PM_ATTACHMENTS) {
  o->count=info->subpassCount;
@@ -116,11 +116,11 @@ if(o && info->subpassCount<=PM_SUBPASSES && info->attachmentCount<=PM_ATTACHMENT
  for(uint32_t i=0;i<info->subpassCount;i++) for(uint32_t j=0;j<info->pSubpasses[i].colorAttachmentCount;j++) {
   uint32_t k=info->pSubpasses[i].pColorAttachments[j].attachment;
   if(k<PM_ATTACHMENTS)o->colors[i]|=1u<<k;
-  else if(k!=VK_ATTACHMENT_UNUSED)pm_gap();
+  else if(k!=VK_ATTACHMENT_UNUSED)pm_gap(PM_META_GAP);
   if(info->pSubpasses[i].pResolveAttachments){k=info->pSubpasses[i].pResolveAttachments[j].attachment;
-   if(k<PM_ATTACHMENTS)o->colors[i]|=1u<<k;else if(k!=VK_ATTACHMENT_UNUSED)pm_gap();}
+   if(k<PM_ATTACHMENTS)o->colors[i]|=1u<<k;else if(k!=VK_ATTACHMENT_UNUSED)pm_gap(PM_META_GAP);}
  }
-}else pm_gap();pm_leave();}return r;
+}else pm_gap(PM_META_GAP);pm_leave();}return r;
 }
 
 static void VKAPI_CALL PM_DestroyRenderPass(VkDevice d,VkRenderPass pass_,const VkAllocationCallbacks *a) {
@@ -131,10 +131,22 @@ next(d,pass_,a);
 
 static VkResult VKAPI_CALL PM_BeginCommandBuffer(VkCommandBuffer cmd,const VkCommandBufferBeginInfo *info) {
 PFN_vkBeginCommandBuffer next=(PFN_vkBeginCommandBuffer)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkBeginCommandBuffer");
-VkResult r=next(cmd,info);if(r==VK_SUCCESS && pm_enter()) {
+VkResult r=next(cmd,info);if(r==VK_SUCCESS && pm_enter(PM_COMMAND_GAP)) {
 struct pm_object *c=pm_put(PM_COMMAND,(uint64_t)cmd,(uint64_t)dev_for(cmd)->handle);
+if(c)c->recording_gap=pm_gap_count(PM_COMMAND_GAP);
 if(c && (info->flags&VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT))c->b=1;
 pm_leave();}return r;
+}
+
+static VkResult VKAPI_CALL PM_EndCommandBuffer(VkCommandBuffer cmd) {
+PFN_vkEndCommandBuffer next=(PFN_vkEndCommandBuffer)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkEndCommandBuffer");
+VkResult r=next(cmd);
+if(pm_enter(PM_COMMAND_GAP)) {
+    struct pm_object *c=pm_find(PM_COMMAND,(uint64_t)cmd);
+    if(c)c->ended=r==VK_SUCCESS && c->recording_gap==pm_gap_count(PM_COMMAND_GAP);
+    else pm_gap(PM_COMMAND_GAP);
+    pm_leave();
+}return r;
 }
 
 static void VKAPI_CALL PM_FreeCommandBuffers(VkDevice d,VkCommandPool pool,uint32_t count,const VkCommandBuffer *cmds) {
@@ -273,9 +285,9 @@ next(cmd,info);
 static void VKAPI_CALL PM_CmdBeginRendering(VkCommandBuffer cmd,const VkRenderingInfo *info) {
 PFN_vkCmdBeginRendering next=(PFN_vkCmdBeginRendering)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdBeginRendering");
 if(!next) next=(PFN_vkCmdBeginRendering)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdBeginRenderingKHR");
-if(pm_enter()) {
+if(pm_enter(PM_COMMAND_GAP)) {
 struct pm_object *c=pm_find(PM_COMMAND,(uint64_t)cmd);
-if(!c || info->colorAttachmentCount>PM_ATTACHMENTS/2)pm_gap();
+if(!c || info->colorAttachmentCount>PM_ATTACHMENTS/2)pm_gap(PM_COMMAND_GAP);
 else {
  c->active_count=0;c->b=0;
  for(uint32_t i=0;i<info->colorAttachmentCount;i++) {
@@ -296,11 +308,11 @@ next(cmd);
 
 static void VKAPI_CALL PM_CmdExecuteCommands(VkCommandBuffer cmd,uint32_t count,const VkCommandBuffer *children) {
 PFN_vkCmdExecuteCommands next=(PFN_vkCmdExecuteCommands)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdExecuteCommands");
-if(pm_enter()) {
+if(pm_enter(PM_COMMAND_GAP)) {
 struct pm_object *c=pm_find(PM_COMMAND,(uint64_t)cmd);
 for(uint32_t i=0;i<count;i++) {
  struct pm_object *child=pm_find(PM_COMMAND,(uint64_t)children[i]);
- if(!c || !child) {pm_gap();continue;}
+ if(!c || !child || !child->ended || child->recording_gap!=pm_gap_count(PM_COMMAND_GAP)) {pm_gap(PM_COMMAND_GAP);continue;}
  for(unsigned j=0;j<child->count;j++)pm_write_locked(c,child->writes[j].image,child->writes[j].kinds);
 }pm_leave();}next(cmd,count,children);
 }
@@ -321,6 +333,7 @@ static void VKAPI_CALL PM_CmdDrawIndexedIndirectCount(VkCommandBuffer cmd,VkBuff
 }
 
 static PFN_vkVoidFunction pm_hook(const char *name) {
+if(!strcmp(name,"vkEndCommandBuffer"))return (PFN_vkVoidFunction)PM_EndCommandBuffer;
 if(!strcmp(name,"vkCmdDrawIndirectCount"))return (PFN_vkVoidFunction)PM_CmdDrawIndirectCount;
 if(!strcmp(name,"vkCmdDrawIndirectCountKHR"))return (PFN_vkVoidFunction)PM_CmdDrawIndirectCount;
 if(!strcmp(name,"vkCmdDrawIndexedIndirectCount"))return (PFN_vkVoidFunction)PM_CmdDrawIndexedIndirectCount;
