@@ -357,19 +357,19 @@ public:
                 frame_.render.bytes = xrWidth_ * xrHeight_ * 4;
                 frame_.render.color_space = DROIDDECK_XR_COLOR_LINEAR_RGBA8;
             }
+            std::lock_guard<std::mutex> lock(mutex_);
             for (int e = 0; e < 2; e++) {
                 frame_.texture[e] = eyes[e].hTexture;
                 frame_.minimumWrite[e] = 0;
-                {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    if(Set *set=Find(eyes[e].hTexture))for(int i=0;i<3;i++)
-                        if(set->handles[i]==eyes[e].hTexture)frame_.minimumWrite[e]=set->minimumWrite[i];
-                }
+                if(Set *set=Find(eyes[e].hTexture))for(int i=0;i<3;i++)
+                    if(set->handles[i]==eyes[e].hTexture)frame_.minimumWrite[e]=set->minimumWrite[i];
                 frame_.bounds[e][0] = eyes[e].bounds.uMin; frame_.bounds[e][1] = eyes[e].bounds.vMin;
                 frame_.bounds[e][2] = eyes[e].bounds.uMax; frame_.bounds[e][3] = eyes[e].bounds.vMax;
                 std::memcpy(frame_.render.projection[e], eyes[e].mProjection.m, sizeof(eyes[e].mProjection.m));
                 xr_frame_eye_pose(frame_.render.eye_pose[e], eyes[e].mHmdPose.m, eyeToHead_[e].m);
             }
+            for(int e=0;e<2;e++)if(Set *set=Find(eyes[e].hTexture))
+                for(int i=0;i<3;i++)if(set->handles[i]==eyes[e].hTexture)set->minimumWrite[i]=0;
         }
         if (frames_ < 3)
             Log("SubmitLayer: textures 0x%llx / 0x%llx, bounds %.2f,%.2f-%.2f,%.2f",
