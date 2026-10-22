@@ -31,7 +31,8 @@ if(r==VK_SUCCESS && pm_enabled) {
 
 static void VKAPI_CALL PM_FreeMemory(VkDevice d,VkDeviceMemory memory,const VkAllocationCallbacks *a) {
 PFN_vkFreeMemory next=(PFN_vkFreeMemory)dev_for(d)->gdpa(dev_for(d)->handle,"vkFreeMemory");
-pm_remove(PM_MEMORY,(uint64_t)memory);next(d,memory,a);
+pm_remove(PM_MEMORY,(uint64_t)memory);
+next(d,memory,a);
 }
 
 static VkResult VKAPI_CALL PM_BindImageMemory(VkDevice d,VkImage image,VkDeviceMemory memory,VkDeviceSize offset) {
@@ -55,7 +56,8 @@ pm_leave();}return r;
 
 static void VKAPI_CALL PM_DestroyImage(VkDevice d,VkImage image,const VkAllocationCallbacks *a) {
 PFN_vkDestroyImage next=(PFN_vkDestroyImage)dev_for(d)->gdpa(dev_for(d)->handle,"vkDestroyImage");
-pm_remove(PM_IMAGE,(uint64_t)image);next(d,image,a);
+pm_remove(PM_IMAGE,(uint64_t)image);
+next(d,image,a);
 }
 
 static VkResult VKAPI_CALL PM_CreateImageView(VkDevice d,const VkImageViewCreateInfo *info,const VkAllocationCallbacks *a,VkImageView *view) {
@@ -66,7 +68,8 @@ struct pm_object *o=pm_put(PM_VIEW,(uint64_t)*view,(uint64_t)d);if(o)o->a=(uint6
 
 static void VKAPI_CALL PM_DestroyImageView(VkDevice d,VkImageView view,const VkAllocationCallbacks *a) {
 PFN_vkDestroyImageView next=(PFN_vkDestroyImageView)dev_for(d)->gdpa(dev_for(d)->handle,"vkDestroyImageView");
-pm_remove(PM_VIEW,(uint64_t)view);next(d,view,a);
+pm_remove(PM_VIEW,(uint64_t)view);
+next(d,view,a);
 }
 
 static VkResult VKAPI_CALL PM_CreateFramebuffer(VkDevice d,const VkFramebufferCreateInfo *info,const VkAllocationCallbacks *a,VkFramebuffer *fb) {
@@ -81,7 +84,8 @@ if(o){o->a=info->flags&VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
 
 static void VKAPI_CALL PM_DestroyFramebuffer(VkDevice d,VkFramebuffer fb,const VkAllocationCallbacks *a) {
 PFN_vkDestroyFramebuffer next=(PFN_vkDestroyFramebuffer)dev_for(d)->gdpa(dev_for(d)->handle,"vkDestroyFramebuffer");
-pm_remove(PM_FRAMEBUFFER,(uint64_t)fb);next(d,fb,a);
+pm_remove(PM_FRAMEBUFFER,(uint64_t)fb);
+next(d,fb,a);
 }
 
 static VkResult VKAPI_CALL PM_CreateRenderPass(VkDevice d,const VkRenderPassCreateInfo *info,const VkAllocationCallbacks *a,VkRenderPass *pass_) {
@@ -121,7 +125,8 @@ if(o && info->subpassCount<=PM_SUBPASSES && info->attachmentCount<=PM_ATTACHMENT
 
 static void VKAPI_CALL PM_DestroyRenderPass(VkDevice d,VkRenderPass pass_,const VkAllocationCallbacks *a) {
 PFN_vkDestroyRenderPass next=(PFN_vkDestroyRenderPass)dev_for(d)->gdpa(dev_for(d)->handle,"vkDestroyRenderPass");
-pm_remove(PM_PASS,(uint64_t)pass_);next(d,pass_,a);
+pm_remove(PM_PASS,(uint64_t)pass_);
+next(d,pass_,a);
 }
 
 static VkResult VKAPI_CALL PM_BeginCommandBuffer(VkCommandBuffer cmd,const VkCommandBufferBeginInfo *info) {
@@ -134,7 +139,8 @@ pm_leave();}return r;
 
 static void VKAPI_CALL PM_FreeCommandBuffers(VkDevice d,VkCommandPool pool,uint32_t count,const VkCommandBuffer *cmds) {
 PFN_vkFreeCommandBuffers next=(PFN_vkFreeCommandBuffers)dev_for(d)->gdpa(dev_for(d)->handle,"vkFreeCommandBuffers");
-for(uint32_t i=0;i<count;i++)pm_remove(PM_COMMAND,(uint64_t)cmds[i]);next(d,pool,count,cmds);
+for(uint32_t i=0;i<count;i++)pm_remove(PM_COMMAND,(uint64_t)cmds[i]);
+next(d,pool,count,cmds);
 }
 
 static void VKAPI_CALL PM_CmdBeginRenderPass(VkCommandBuffer cmd,const VkRenderPassBeginInfo *info,VkSubpassContents contents) {
@@ -239,25 +245,29 @@ next(cmd,image,layout,color,count,ranges);
 static void VKAPI_CALL PM_CmdCopyImage2(VkCommandBuffer cmd,const VkCopyImageInfo2 *info) {
 PFN_vkCmdCopyImage2 next=(PFN_vkCmdCopyImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdCopyImage2");
 if(!next) next=(PFN_vkCmdCopyImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdCopyImage2KHR");
-if(info->regionCount)pm_write(cmd,info->dstImage,PM_COPY);next(cmd,info);
+if(info->regionCount)pm_write(cmd,info->dstImage,PM_COPY);
+next(cmd,info);
 }
 
 static void VKAPI_CALL PM_CmdBlitImage2(VkCommandBuffer cmd,const VkBlitImageInfo2 *info) {
 PFN_vkCmdBlitImage2 next=(PFN_vkCmdBlitImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdBlitImage2");
 if(!next) next=(PFN_vkCmdBlitImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdBlitImage2KHR");
-if(info->regionCount)pm_write(cmd,info->dstImage,PM_BLIT);next(cmd,info);
+if(info->regionCount)pm_write(cmd,info->dstImage,PM_BLIT);
+next(cmd,info);
 }
 
 static void VKAPI_CALL PM_CmdResolveImage2(VkCommandBuffer cmd,const VkResolveImageInfo2 *info) {
 PFN_vkCmdResolveImage2 next=(PFN_vkCmdResolveImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdResolveImage2");
 if(!next) next=(PFN_vkCmdResolveImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdResolveImage2KHR");
-if(info->regionCount)pm_write(cmd,info->dstImage,PM_RESOLVE);next(cmd,info);
+if(info->regionCount)pm_write(cmd,info->dstImage,PM_RESOLVE);
+next(cmd,info);
 }
 
 static void VKAPI_CALL PM_CmdCopyBufferToImage2(VkCommandBuffer cmd,const VkCopyBufferToImageInfo2 *info) {
 PFN_vkCmdCopyBufferToImage2 next=(PFN_vkCmdCopyBufferToImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdCopyBufferToImage2");
 if(!next) next=(PFN_vkCmdCopyBufferToImage2)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdCopyBufferToImage2KHR");
-if(info->regionCount)pm_write(cmd,info->dstImage,PM_COPY);next(cmd,info);
+if(info->regionCount)pm_write(cmd,info->dstImage,PM_COPY);
+next(cmd,info);
 }
 
 static void VKAPI_CALL PM_CmdBeginRendering(VkCommandBuffer cmd,const VkRenderingInfo *info) {
@@ -280,7 +290,8 @@ else {
 static void VKAPI_CALL PM_CmdEndRendering(VkCommandBuffer cmd) {
 PFN_vkCmdEndRendering next=(PFN_vkCmdEndRendering)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdEndRendering");
 if(!next) next=(PFN_vkCmdEndRendering)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdEndRenderingKHR");
-pm_end_pass(cmd);next(cmd);
+pm_end_pass(cmd);
+next(cmd);
 }
 
 static void VKAPI_CALL PM_CmdExecuteCommands(VkCommandBuffer cmd,uint32_t count,const VkCommandBuffer *children) {
