@@ -38,7 +38,7 @@ def read(path):
     process = h[13].split(b'\0')[0].decode('ascii')
     meta = dict(path=str(path), run=h[3], start_ns=h[4], end_ns=h[5], count=h[6],
                 dropped=h[7], slot=h[8], mode=h[9], pid=h[10], capacity=h[11],
-                unregistered=h[12], process=process)
+                unregistered=h[12], process=process, exported_ns=h[14], finished=bool(h[15]))
     events = []
     for offset in range(HEADER.size, len(raw), RECORD.size):
         r = RECORD.unpack_from(raw, offset)
@@ -199,7 +199,9 @@ def analyze(metas, events):
     lost = sum(m['dropped'] for m in metas) + max(m['unregistered'] for m in metas)
     required = (1,2,3,4,5,6,7,8,9,11)
     missing = [NAMES[k] for k in required if not groups[k]]
-    return dict(run=metas[0]['run'], mode=mode, complete=not lost and not missing,
+    interrupted = any(not m.get('finished', True) for m in metas)
+    return dict(run=metas[0]['run'], mode=mode, complete=not lost and not missing and not interrupted,
+        interrupted=interrupted,
         lost=lost, missing_boundaries=missing, counts={NAMES[k]:len(v) for k,v in groups.items()},
         joins_missing=dict(misses), intervals_ms={k:stats(v) for k,v in intervals.items()},
         angular_step_degrees={k:stats(v) for k,v in angular.items()}, publication_age_ms=stats(ages),

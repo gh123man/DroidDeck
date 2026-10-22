@@ -66,10 +66,15 @@ class MotionTraceTests(unittest.TestCase):
         with self.assertRaises(ValueError): analyze([META, dict(META, run=2)], [])
         with self.assertRaises(ValueError): analyze([META, dict(META, start_ns=EPOCH+1)], [])
 
+    def test_interrupted_capture_is_inconclusive(self):
+        report = analyze([dict(META, finished=False)], [])
+        self.assertTrue(report['interrupted'])
+        self.assertFalse(report['complete'])
+
     def test_binary_roundtrip_and_truncation(self):
         e = driver(1, EPOCH+1_000_000)
         header = HEADER.pack(b'DDMOTION', 1, 128, 1, EPOCH, EPOCH+30_000_000_000,
-                             1, 0, 0, 2, 42, 65536, 0, b'driver', 0, 0, 0, 0)
+                             1, 0, 0, 2, 42, 65536, 0, b'driver', EPOCH+30_000_000_000, 1, 0, 0)
         record = RECORD.pack(e.ns, e.id, e.related, e.kind, e.flags, *e.v)
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)/'trace.bin'; p.write_bytes(header+record)

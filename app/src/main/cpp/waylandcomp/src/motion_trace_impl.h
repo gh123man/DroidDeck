@@ -113,6 +113,8 @@ static int dd_mt_export(uint64_t run, unsigned mode) {
         h.count = ring->count; h.dropped = ring->dropped;
         h.slot = i; h.mode = mode; h.pid = getpid(); h.capacity = DD_MOTION_CAPACITY;
         h.unregistered = __atomic_load_n(&dd_mt.unregistered, __ATOMIC_RELAXED);
+        h.reserved[0] = (uint64_t)dd_motion_now();
+        h.reserved[1] = (int64_t)h.reserved[0] >= h.end_ns;
         snprintf(h.process, sizeof(h.process), "%s", dd_mt.process);
         FILE *f = fopen(tmp, "wb");
         if (!f) { ok = 0; continue; }

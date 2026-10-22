@@ -39,7 +39,7 @@ int main(void) {
         char path[768]; snprintf(path, sizeof(path), "%s/motion-1-test-%d-%d.bin", dir, getpid(), i);
         FILE *f = fopen(path, "rb"); assert(f);
         struct dd_motion_header h; assert(fread(&h, sizeof(h), 1, f) == 1);
-        assert(h.count <= DD_MOTION_CAPACITY && h.start_ns == epoch && h.mode == 2);
+        assert(h.count <= DD_MOTION_CAPACITY && h.start_ns == epoch && h.mode == 2 && h.reserved[1]);
         count += h.count; dropped += h.dropped;
         for (uint64_t j = 0; j < h.count; j++) {
             struct dd_motion_record r; assert(fread(&r, sizeof(r), 1, f) == 1);
@@ -58,7 +58,13 @@ int main(void) {
     double q[4]; dd_motion_yaw(2, epoch, epoch + 2000000000, q);
     assert(fabs(q[0] - cos(3.141592653589793/12)) < 1e-12);
     dd_motion_yaw(1, epoch, epoch + 2000000000, q); assert(q[0] == 1 && q[2] == 0);
+    epoch = dd_motion_now() + 600000000;
+    arm(dir, 3, 1, epoch); pause_ms(300);
     dd_motion_stop();
+    snprintf(path, sizeof(path), "%s/motion-3-test-%d-0.bin", dir, getpid());
+    f = fopen(path, "rb"); assert(f);
+    assert(fread(&h, sizeof(h), 1, f) == 1); fclose(f);
+    assert(h.reserved[1] == 0);
     DIR *d = opendir(dir); assert(d); struct dirent *entry;
     while ((entry = readdir(d))) {
         if (entry->d_name[0] == '.') continue;
