@@ -10,6 +10,7 @@ typedef unsigned long VisualID;
 
 #include "../../../app/src/main/cpp/waylandcomp/src/headpose_shm.h"
 #include "presenter.h"
+#include "../../../app/src/main/cpp/waylandcomp/src/motion_trace.h"
 #include "presenter_image.h"
 #include "present_sync.h"
 #include "xr_tracking_file.h"
@@ -820,6 +821,11 @@ private:
     }
 
     bool Draw(const EyeFrame &f) {
+        auto trace = [&f](unsigned stage, uint64_t related = 0, VkResult result = VK_SUCCESS) {
+            double v[] = {(double)result};
+            dd_motion_emit(DD_MOTION_COPY, stage, f.render.frame_id, related, v, 1);
+        };
+        trace(0);
         const Imported *eye[2] = {Find(f.texture[0]), Find(f.texture[1])};
         if (!eye[0] || !eye[1] || !swapchain_) return false;
         if (SrgbEyeFormat(eye[0]->format) != SrgbEyeFormat(eye[1]->format)) return false;
@@ -827,13 +833,17 @@ private:
         if (producerLease_) {
             if (!eye[0]->producerPid || eye[0]->producerPid != eye[1]->producerPid) { leaseMisses_++; return false; }
             const auto start = std::chrono::steady_clock::now();
+            trace(1, eye[0]->producerPid);
             lease.emplace(eye[0]->producerPid);
+            trace(2, eye[0]->producerPid, lease->Acquired() ? VK_SUCCESS : VK_ERROR_UNKNOWN);
             longestLease_ = std::max(longestLease_, std::chrono::steady_clock::now() - start);
             if (!lease->Acquired()) { leaseMisses_++; return false; }
         }
         if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
         uint32_t idx = 0;
+        trace(3);
         VkResult r = vk_.AcquireNextImageKHR(dev_, swapchain_, 100000000ull, acquired_, VK_NULL_HANDLE, &idx);
+        trace(4, idx, r);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
             static int said;
             if (said++ < 3) Log("presenter: acquire %d", r);
@@ -883,16 +893,22 @@ private:
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered};
         if (lease) lease->BeginGpu();
+        trace(5, idx);
         r = vk_.QueueSubmit(queue_, 1, &si, fence_);
+        trace(6, idx, r);
         if (r == VK_SUCCESS) r = vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+        trace(7, idx, r);
         if (r != VK_SUCCESS) {
             if (lease && vk_.DeviceWaitIdle(dev_) == VK_SUCCESS) lease->EndGpu();
             Log("presenter: GPU copy failed %d", r);
             Fail(); return false;
         }
         if (lease) { lease->EndGpu(); if (!lease->Release()) { Fail(); return false; } }
+        trace(8, idx);
         VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered, 1, &swapchain_, &idx, nullptr};
+        trace(9, idx);
         r = vk_.QueuePresentKHR(queue_, &pi);
+        trace(10, idx, r);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
             static int said;
             if (said++ < 3) Log("presenter: present %d", r);

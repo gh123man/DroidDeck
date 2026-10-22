@@ -412,6 +412,29 @@ Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetCardboard(JNIEnv 
     vkp_cardboard_set(&p);
 }
 
+#include "motion_trace.h"
+
+JNIEXPORT void JNICALL
+Java_com_droiddeck_launcher_glasses_MotionDiagnostics_nativeSample(JNIEnv *env, jobject self,
+        jlong sensor_ns, jlong received_ns, jfloatArray pose, jboolean reset,
+        jfloat gx, jfloat gy, jfloat gz, jfloat ax, jfloat ay, jfloat az) {
+    float q[4] = {0};
+    int accepted = pose && (*env)->GetArrayLength(env, pose) >= 4;
+    if (accepted) (*env)->GetFloatArrayRegion(env, pose, 0, 4, q);
+    double values[] = {q[3], q[0], q[1], q[2], gx, gy, gz, ax, ay, az};
+    dd_motion_source(sensor_ns, received_ns, (accepted ? 1u : 0u) | (reset ? 2u : 0u), values);
+}
+
+JNIEXPORT void JNICALL
+Java_com_droiddeck_launcher_glasses_MotionDiagnostics_nativeClear(JNIEnv *env, jobject self) {
+    dd_motion_clear_source();
+}
+
+JNIEXPORT void JNICALL
+Java_com_droiddeck_launcher_glasses_MotionDiagnostics_nativeRecenter(JNIEnv *env, jobject self) {
+    dd_motion_emit(DD_MOTION_RECENTER, 0, dd_motion_source_id(), 0, NULL, 0);
+}
+
 JNIEXPORT void JNICALL
 Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetCardboardPose(JNIEnv *env, jclass clazz, jfloatArray rot,
         jboolean live) {

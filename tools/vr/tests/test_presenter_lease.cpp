@@ -1,3 +1,4 @@
+#include "../../../app/src/main/cpp/waylandcomp/src/motion_trace_impl.h"
 #define DROIDDECK_PRODUCER_SERVER
 #include "../src/presenter.cpp"
 #include <cassert>

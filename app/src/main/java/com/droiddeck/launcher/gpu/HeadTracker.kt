@@ -100,6 +100,7 @@ class HeadTracker(context: Context, private val glasses: Boolean = false, val ce
 
     private fun apply(screenToWorld: FloatArray) {
         val ref = reference.takeUnless { recenterPending } ?: HeadPose.recenter(screenToWorld, centerView).also {
+            com.droiddeck.launcher.glasses.MotionDiagnostics.recenter()
             reference = it
             recenterPending = false
         }

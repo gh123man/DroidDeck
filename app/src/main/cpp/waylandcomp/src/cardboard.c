@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "headpose_shm.h"
+#include "motion_trace_impl.h"
 #endif
 
 #ifndef CARDBOARD_HOST_TEST
@@ -98,6 +99,7 @@ void vkp_cardboard_set(const struct cardboard_params *p) {
 static struct droiddeck_headpose *g_shm;
 static int g_eye_w, g_eye_h;
 static int g_render_height;
+static uint64_t g_motion_source;
 
 void vkp_cardboard_set_render_height(int height) {
     pthread_mutex_lock(&g_lock);
@@ -107,6 +109,12 @@ void vkp_cardboard_set_render_height(int height) {
 }
 
 void vkp_cardboard_set_pose_file(const char *path) {
+    if (path && *path) {
+        char directory[512];
+        snprintf(directory, sizeof(directory), "%s", path);
+        char *slash = strrchr(directory, '/');
+        if (slash) { *slash = 0; dd_motion_start(directory, "android"); }
+    }
     pthread_mutex_lock(&g_lock);
     if (!g_shm && path && *path) {
         int fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
@@ -146,13 +154,19 @@ static void shm_publish(int live) {
     g_shm->eye_w = (uint32_t)(g_eye_w > 0 ? g_eye_w : 0);
     g_shm->eye_h = (uint32_t)(g_eye_h > 0 ? g_eye_h : 0);
     g_shm->eye_aspect = g_eye_h > 0 ? (float)g_eye_w / (float)g_eye_h : 1.0f;
+    memcpy(g_shm->reserved, &g_motion_source, sizeof(g_motion_source));
     atomic_thread_fence(memory_order_release);
     atomic_store_explicit(seq, (s | 1u) + 1u, memory_order_relaxed);
+    double trace[10];
+    for (int i = 0; i < 9; i++) trace[i] = g_pose[i];
+    trace[9] = (double)g_shm->time_ns;
+    dd_motion_emit(DD_MOTION_PUBLISH, g_shm->flags, (s | 1u) + 1u, g_motion_source, trace, 10);
 }
 
 
 void vkp_cardboard_set_spatial_pose(const float m[9], const float position[3], int live) {
     pthread_mutex_lock(&g_lock);
+    g_motion_source = dd_motion_source_id();
     memcpy(g_pose, m, sizeof(g_pose));
     memcpy(g_position, position, sizeof(g_position));
     g_live = live;

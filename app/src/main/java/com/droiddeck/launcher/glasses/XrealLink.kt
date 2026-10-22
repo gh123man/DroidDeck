@@ -78,11 +78,18 @@ internal class XrealLink internal constructor(
                             if (sample != null) {
                                 lastSensor = System.nanoTime()
                                 val enabled = tracking
-                                if (enabled && !wasTracking) filter = XrealOrientationFilter()
+                                val reset = enabled && !wasTracking
+                                if (reset) filter = XrealOrientationFilter()
                                 wasTracking = enabled
-                                if (enabled) filter.update(sample)?.let {
-                                    if (running && ready && tracking && connection.get() === current)
-                                        listener.onPose(frame.body, it, System.nanoTime())
+                                if (enabled) {
+                                    val pose = filter.update(sample)
+                                    MotionDiagnostics.sample(sample, lastSensor, pose, reset)
+                                    try {
+                                        if (pose != null && running && ready && tracking && connection.get() === current)
+                                            listener.onPose(frame.body, pose, System.nanoTime())
+                                    } finally {
+                                        MotionDiagnostics.clear()
+                                    }
                                 }
                             } else if (System.nanoTime() - lastSensor > 3_000_000_000L) {
                                 throw IOException("No valid XREAL IMU reports")

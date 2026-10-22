@@ -3,6 +3,12 @@ on:
   push:
     paths:
       - 'tools/vr/**'
+      - 'tools/motion/**'
+      - 'tools/tests/test_motion_trace.py'
+      - 'app/src/main/cpp/waylandcomp/src/motion_trace*.h'
+      - 'app/src/main/cpp/waylandcomp/src/cardboard.c'
+      - 'app/src/main/cpp/waylandcomp/src/compositor.c'
+      - 'app/src/main/cpp/waylandcomp/src/waylandcomp_jni.c'
       - 'app/src/main/cpp/waylandcomp/src/vk_present.c'
       - 'app/src/main/cpp/CMakeLists.txt'
       - 'tools/tests/test_android_present_semaphores.py'
@@ -13,6 +19,12 @@ on:
   pull_request:
     paths:
       - 'tools/vr/**'
+      - 'tools/motion/**'
+      - 'tools/tests/test_motion_trace.py'
+      - 'app/src/main/cpp/waylandcomp/src/motion_trace*.h'
+      - 'app/src/main/cpp/waylandcomp/src/cardboard.c'
+      - 'app/src/main/cpp/waylandcomp/src/compositor.c'
+      - 'app/src/main/cpp/waylandcomp/src/waylandcomp_jni.c'
       - 'app/src/main/cpp/waylandcomp/src/vk_present.c'
       - 'app/src/main/cpp/CMakeLists.txt'
       - 'tools/tests/test_android_present_semaphores.py'
@@ -36,7 +48,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers
       - name: Test producer completion and retained ownership
-        run: python3 -m unittest tools.tests.test_steamvr_helper tools.tests.test_vr_producer_lease tools.tests.test_android_present_semaphores -v
+        run: python3 -m unittest tools.tests.test_steamvr_helper tools.tests.test_vr_producer_lease tools.tests.test_android_present_semaphores tools.tests.test_motion_trace -v
       - name: Test presenter and submission ordering
         run: |
           mkdir -p /tmp/vr-sync-tests
@@ -47,6 +59,8 @@ jobs:
               tools/vr/tests/test_${test}.cpp /tmp/vr-sync-tests/wayland.o /tmp/vr-sync-tests/xdg.o -ldl -o /tmp/vr-sync-tests/$test
             /tmp/vr-sync-tests/$test
           done
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pthread tools/vr/tests/test_motion_trace.c -lm -o /tmp/vr-sync-tests/motion_trace
+          /tmp/vr-sync-tests/motion_trace
           for test in fence_tracker compositor_submit semaphore_layer; do
             cc -std=c11 -O2 -pthread -Itools/vr/src tools/vr/tests/test_${test}.c -ldl -o /tmp/vr-sync-tests/$test
             /tmp/vr-sync-tests/$test

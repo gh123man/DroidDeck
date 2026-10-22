@@ -1,4 +1,5 @@
 #include "openvr_driver.h"
+#include "../../../app/src/main/cpp/waylandcomp/src/motion_trace_impl.h"
 
 #include <algorithm>
 #include <string>
@@ -237,6 +238,9 @@ public:
                 auto now = std::chrono::steady_clock::now();
                 double offset = std::chrono::duration<double>(next - now).count();
                 timing_.Record(next, interval);
+                double trace[] = {offset, (double)std::chrono::duration_cast<std::chrono::nanoseconds>(next.time_since_epoch()).count(),
+                                  (double)interval.count()};
+                dd_motion_emit(DD_MOTION_VSYNC, 0, 0, 0, trace, 3);
                 VRServerDriverHost()->VsyncEvent(offset);
                 next += interval;
                 now = std::chrono::steady_clock::now();
@@ -335,6 +339,11 @@ public:
 
     void SubmitLayer(const SubmitLayerPerEye_t (&eyes)[2]) override {
         layers_++;
+        for (int eye = 0; eye < 2; eye++) {
+            double matrix[12];
+            for (int i = 0; i < 12; i++) matrix[i] = (&eyes[eye].mHmdPose.m[0][0])[i];
+            dd_motion_emit(DD_MOTION_LAYER, (layerInFrame_ << 1) | eye, frames_ + 1, eyes[eye].hTexture, matrix, 12);
+        }
         if (layerInFrame_++ == 0) {
             frame_.render = {};
             if (xrWidth_) {
@@ -361,7 +370,10 @@ public:
         frames_++;
         frame_.render.frame_id = frames_; frame_.render.captured_ns = XrTrackingFile::Now();
         frame_.layers = layerInFrame_;
+        double present[] = {(double)layerInFrame_, (double)frame_.texture[0], (double)frame_.texture[1]};
+        dd_motion_emit(DD_MOTION_PRESENT, 0, frames_, sync, present, 3);
         if (layerInFrame_) droiddeck::Presenter::Submit(frame_);
+        dd_motion_emit(DD_MOTION_PRESENT, 1, frames_, sync, present, 3);
         if (layerInFrame_ != lastLayerCount_) {
             static int said;
             if (said++ < 20) Log("frame %llu: %d layer(s) (was %d)", (unsigned long long)frames_, layerInFrame_, lastLayerCount_);
@@ -375,7 +387,11 @@ public:
 
     void PostPresent(const Throttling_t *t) override {
         auto until = Vsync::Deadline(t ? t->nFramesToThrottle : 0);
+        double throttle[] = {(double)std::chrono::duration_cast<std::chrono::nanoseconds>(until.time_since_epoch()).count(),
+                             (double)(t ? t->nFramesToThrottle : 0)};
+        dd_motion_emit(DD_MOTION_THROTTLE, 0, frames_, 0, throttle, 2);
         if (until > std::chrono::steady_clock::now()) std::this_thread::sleep_until(until);
+        dd_motion_emit(DD_MOTION_THROTTLE, 1, frames_, 0, throttle, 2);
     }
 
     void GetFrameTiming(DriverDirectMode_FrameTiming *t) override { t->m_nReprojectionFlags = 0; }
@@ -1453,7 +1469,7 @@ public:
 
     DriverPose_t GetPose() override { return GetPose(nullptr); }
 
-    DriverPose_t GetPose(droiddeck_spatialpose *snapshot) {
+    DriverPose_t GetPose(droiddeck_spatialpose *snapshot, uint64_t *traceId = nullptr) {
         std::lock_guard<std::mutex> lock(spatialMutex_);
         DriverPose_t p = {};
         p.qWorldFromDriverRotation.w = 1;
@@ -1474,7 +1490,8 @@ public:
         }
         p.vecPosition[1] = 1.6;
         droiddeck_headpose hp;
-        if (pose_.Read(&hp)) lastHeadPoseSnapshot_ = hp;
+        const bool poseRead = pose_.Read(&hp);
+        if (poseRead) lastHeadPoseSnapshot_ = hp;
         else hp = lastHeadPoseSnapshot_;
         if (hp.magic == DROIDDECK_HEADPOSE_MAGIC && hp.version == DROIDDECK_HEADPOSE_VERSION) {
             p.qRotation = QuatFromMatrix(hp.rot);
@@ -1505,6 +1522,25 @@ public:
                 p.result = TrackingResult_Running_OutOfRange;
             }
         }
+        static uint64_t serial = 0;
+        const uint64_t call = ++serial;
+        if (traceId) *traceId = call;
+        double values[12] = {p.qRotation.w, p.qRotation.x, p.qRotation.y, p.qRotation.z};
+        int64_t epoch;
+        unsigned mode = dd_motion_mode(&epoch);
+        const int64_t evaluatedNs = dd_motion_now();
+        if (mode) {
+            double q[4];
+            dd_motion_yaw(mode, epoch, evaluatedNs, q);
+            p.qRotation = {q[0], q[1], q[2], q[3]};
+        }
+        values[4] = p.qRotation.w; values[5] = p.qRotation.x;
+        values[6] = p.qRotation.y; values[7] = p.qRotation.z;
+        values[8] = (double)hp.time_ns; values[9] = p.poseTimeOffset; values[10] = (double)evaluatedNs;
+        uint64_t source = 0;
+        memcpy(&source, hp.reserved, sizeof(source)); values[11] = (double)source;
+        dd_motion_emit(DD_MOTION_DRIVER, (poseRead ? 1u : 0u) | (p.poseIsValid ? 2u : 0u) |
+                       ((spatial.flags & DD_SPATIAL_ACTIVE) ? 4u : 0u), call, hp.seq, values, 12);
         return p;
     }
 
@@ -1632,7 +1668,10 @@ private:
                     }
                 }
                 droiddeck_spatialpose spatial{};
-                DriverPose_t head = GetPose(&spatial);
+                uint64_t traceId = 0;
+                DriverPose_t head = GetPose(&spatial, &traceId);
+                double sent[] = {head.qRotation.w, head.qRotation.x, head.qRotation.y, head.qRotation.z, head.poseTimeOffset};
+                dd_motion_emit(DD_MOTION_SENT, head.poseIsValid ? 1u : 0u, traceId, 0, sent, 5);
                 VRServerDriverHost()->TrackedDevicePoseUpdated(id_, head, sizeof(DriverPose_t));
                 const bool lumaJoyCons = (spatial.flags & DD_SPATIAL_ACTIVE) && (spatial.flags & DD_SPATIAL_JOYCONS);
                 const bool optical = !lumaJoyCons && (spatial.flags & DD_SPATIAL_ACTIVE) && (spatial.flags & DD_SPATIAL_HANDS);
@@ -1816,10 +1855,12 @@ class Provider : public IServerTrackedDeviceProvider {
 public:
     ~Provider() {
         if (hmd_.Running()) hmd_.Deactivate();
+        dd_motion_stop();
     }
 
     EVRInitError Init(IVRDriverContext *ctx) override {
         VR_INIT_SERVER_DRIVER_CONTEXT(ctx);
+        dd_motion_start("/run/droiddeck", "driver");
         focusEnabled_ = access("/run/droiddeck/droiddeck-xr-frames", F_OK) == 0;
         Log("DroidDeck Cardboard driver loaded");
         if (!VRServerDriverHost()->TrackedDeviceAdded("droiddeck-cardboard-hmd", TrackedDeviceClass_HMD, &hmd_))
@@ -1832,6 +1873,7 @@ public:
     void Cleanup() override {
         if (focusEnabled_) unlink(kFocusPath);
         if (haptics_) { munmap(haptics_, sizeof(*haptics_)); haptics_ = nullptr; }
+        dd_motion_stop();
         VR_CLEANUP_SERVER_DRIVER_CONTEXT();
     }
     const char *const *GetInterfaceVersions() override { return k_InterfaceVersions; }

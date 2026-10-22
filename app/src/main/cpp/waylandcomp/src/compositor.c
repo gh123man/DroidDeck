@@ -1,5 +1,6 @@
 #define _GNU_SOURCE 1
 #define _POSIX_C_SOURCE 200809L
+#include "motion_trace.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -982,6 +983,11 @@ static void surface_commit(struct wl_client *c, struct wl_resource *r) {
 
     if (s->pending_attach) {
         struct wl_resource *buffer = s->pending_buffer;
+        static uint64_t motion_commit;
+        pid_t motion_pid = 0;
+        wl_client_get_credentials(c, &motion_pid, NULL, NULL);
+        double motion_values[] = {(double)wl_resource_get_id(r), (double)motion_pid};
+        dd_motion_emit(DD_MOTION_COMMIT, 0, ++motion_commit, buffer ? wl_resource_get_id(buffer) : 0, motion_values, 2);
         struct dmabuf_buffer *db = get_dmabuf(buffer);
         struct wl_shm_buffer *shm = buffer && !db ? wl_shm_buffer_get(buffer) : NULL;
         uint8_t pixel[4];
@@ -2027,6 +2033,7 @@ static int scene_waits_for_game(int64_t now) {
 }
 
 static void on_vsync(int64_t frame_time_ns) {
+    dd_motion_emit(DD_MOTION_ANDROID, 7, (uint64_t)frame_time_ns, 0, NULL, 0);
     int64_t now = now_ns();
     g_perf.ticks++;
     if (g_last_vsync_ns) {
