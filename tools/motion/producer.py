@@ -20,13 +20,21 @@ def correlate_producer(pixel_report, metas, events):
     identities={};leases={};health={};writes=[];summaries=[];copy_done={}
     for e in events:
         if e.kind==7 and e.flags==7 and e.v[0]==0:copy_done[e.id]=e
-        elif e.kind==15: identities[e.id]=e
+        elif e.kind==15 and e.flags==0: identities[e.id]=e
         elif e.kind==14 and e.flags==0: health[e.id]=e
         elif e.kind==14 and e.flags==1:
             key=(e.id,e.related,int(e.v[0]))
             if key not in leases or e.v[4]>leases[key].v[4]: leases[key]=e
         elif e.kind==13 and e.flags<3:writes.append(e)
         elif e.kind==13 and e.flags==4:summaries.append(e)
+    readiness=Counter()
+    for e in events:
+        if e.kind!=15 or not e.v[3]:continue
+        readiness['requested']+=1
+        l=leases.get((int(e.v[1]),e.related,int(e.v[0])))
+        if not complete or l is None:readiness['unverified']+=1
+        elif l.v[1]<e.v[3]:readiness['violations']+=1
+        else:readiness['satisfied']+=1
     rows=[]; prior_by_identity={}
     for p in pixel_report['frames']:
         identity=identities.get(p['frame']);row=dict(frame=p['frame'],seconds=p['seconds'],
@@ -76,7 +84,7 @@ def correlate_producer(pixel_report, metas, events):
                            next_write_after_copy=following.ns>done.ns)
         rows.append(row)
     return dict(run=capture['run'],producer_present=bool(producers),capture_complete=complete,
-        coverage_gaps=max((e.v[0] for e in health.values()),default=None),counts=dict(Counter(r['classification'] for r in rows)),
+        readiness=dict(readiness),coverage_gaps=max((e.v[0] for e in health.values()),default=None),counts=dict(Counter(r['classification'] for r in rows)),
         covered_changed_without_new_write=sum(r['classification']=='changed_pixels' and not r['new_completed_write'] for r in rows),
         repeated_frames=[r for r in rows if r['repeats_frame'] is not None],
         limits=['Queued draw commands do not guarantee changed pixels; same producer input or clipping remains possible.',

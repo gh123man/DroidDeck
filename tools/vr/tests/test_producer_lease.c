@@ -11,6 +11,8 @@ static atomic_int quarantined;
 static atomic_int available;
 static atomic_int slow;
 
+static uint64_t reserve(void) {return 17;}
+
 static int acquire(int64_t deadline) {
     assert(deadline > droiddeck_producer_now());
     if (!atomic_load(&available)) return 0;
@@ -42,7 +44,7 @@ int main(void) {
     char parent[128];
     assert(snprintf(parent, sizeof(parent), "%s/droiddeck-steamvr", directory) > 0);
     assert(mkdir(parent, 0755) == 0);
-    struct droiddeck_producer_server server = {.acquire = acquire, .release = release, .quarantine = quarantine};
+    struct droiddeck_producer_server server = {.acquire = acquire, .reserve = reserve, .release = release, .quarantine = quarantine};
     assert(!droiddeck_producer_start(&server));
     assert(chmod(parent, 0700) == 0);
     char path[128];
@@ -61,6 +63,8 @@ int main(void) {
     assert(stat(server.path, &metadata) == 0 && (metadata.st_mode & 0777) == 0600);
     struct droiddeck_producer_server duplicate = server;
     assert(!droiddeck_producer_start(&duplicate));
+    assert(droiddeck_producer_reserve(getpid())==17);
+    assert(!atomic_load(&completed));
     struct droiddeck_producer_lease lease;
     assert(!droiddeck_producer_acquire(getpid(), &lease));
     assert(!atomic_load(&completed));
@@ -84,7 +88,7 @@ int main(void) {
     atomic_store(&slow, 0);
     int abandoned = socket(AF_UNIX, SOCK_SEQPACKET, 0);
     assert(connect(abandoned, (struct sockaddr *)&address, sizeof(address)) == 0);
-    struct droiddeck_producer_message request = {DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_ACQUIRE, 0};
+    struct droiddeck_producer_message request = {DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_ACQUIRE, 0, {{0}}};
     atomic_store(&slow, 1);
     int before = atomic_load(&completed);
     assert(send(abandoned, &request, sizeof(request), MSG_NOSIGNAL) == sizeof(request));

@@ -623,9 +623,15 @@ __attribute__((destructor)) static void producer_process_exit(void) {
     if (g_producer_started && g_producer_server.path[0]) unlink(g_producer_server.path);
 }
 
-static int producer_acquire(int64_t deadline) {
-    while (pthread_mutex_trylock(&g_submission_lock) != 0) {
+static int producer_acquire_targets(int64_t deadline, const struct droiddeck_producer_target *targets) {
+    for (;;) {
         if (droiddeck_producer_now() >= deadline) return 0;
+        if (pthread_mutex_trylock(&g_submission_lock) == 0) {
+            int ready=targets ? pm_targets_ready(targets) : 1;
+            if (ready>0) break;
+            pthread_mutex_unlock(&g_submission_lock);
+            if (ready<0) return 0;
+        }
         usleep(100);
     }
     int queues = 0;
@@ -669,6 +675,8 @@ fail:
     return 0;
 }
 
+static int producer_acquire(int64_t deadline) { return producer_acquire_targets(deadline,NULL); }
+
 static void producer_release(void) {
     pthread_mutex_unlock(&g_submission_lock);
 }
@@ -681,6 +689,8 @@ static void producer_record(struct dev *device, VkQueue queue) {
     if (!g_producer_started && droiddeck_producer_now() >= g_producer_retry_at) {
         g_producer_retry_at = droiddeck_producer_now() + 1000000000LL;
         g_producer_server.acquire = producer_acquire;
+        g_producer_server.acquire_targets = producer_acquire_targets;
+        g_producer_server.reserve = pm_reserve;
         g_producer_server.diagnostic_ready = pm_ready;
         g_producer_server.release = producer_release;
         g_producer_server.quarantine = producer_quarantine;

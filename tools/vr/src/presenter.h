@@ -6,6 +6,7 @@ namespace droiddeck {
 
 struct EyeFrame {
     uint64_t texture[2];
+    uint64_t minimumWrite[2] = {};
     float bounds[2][4];
     DroidDeckXrFrameHeader render;
     uint32_t layers = 0;

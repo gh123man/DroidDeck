@@ -124,6 +124,8 @@ struct PendingImport {
 class CaptureLease {
 public:
     explicit CaptureLease(uint32_t pid) : acquired_(droiddeck_producer_acquire(pid, &lease_)) {}
+    CaptureLease(uint32_t pid,const droiddeck_producer_target targets[2])
+        : acquired_(droiddeck_producer_acquire_targets(pid,&lease_,targets)) {}
     ~CaptureLease() {
         if (lease_.descriptor < 0) return;
         if (gpuComplete_) droiddeck_producer_release(&lease_);
@@ -227,7 +229,7 @@ private:
         frameChannel_ = FrameChannelRequested();
         const char *lease = getenv("DROIDDECK_VR_PRODUCER_LEASE");
         producerLease_ = lease && !strcmp(lease, "1");
-        if (!frameChannel_ && producerLease_) Log("presenter: eye textures retained under producer lease until GPU copy completes");
+        if (!frameChannel_ && producerLease_) Log("presenter: reserved texture generations ready before retained producer lease and GPU copy");
         if (!frameChannel_) wayland_ = !(mode && !strcmp(mode, "x11")) && InitWayland();
         if (!frameChannel_ && !wayland_ && !InitWindow()) {
             Log("presenter: unavailable, frames are not shown");
@@ -880,14 +882,20 @@ private:
             if (!eye[0]->producerPid || eye[0]->producerPid != eye[1]->producerPid) { leaseMisses_++; return false; }
             const auto start = std::chrono::steady_clock::now();
             trace(1, eye[0]->producerPid);
-            lease.emplace(eye[0]->producerPid);
+            droiddeck_producer_target targets[2] = {
+                {eye[0]->inode,eye[0]->device,f.minimumWrite[0]},
+                {eye[1]->inode,eye[1]->device,f.minimumWrite[1]}};
+            lease.emplace(eye[0]->producerPid,targets);
             trace(2, eye[0]->producerPid, lease->Acquired() ? VK_SUCCESS : VK_ERROR_UNKNOWN);
             longestLease_ = std::max(longestLease_, std::chrono::steady_clock::now() - start);
             if (!lease->Acquired()) { leaseMisses_++; return false; }
         }
         if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
-        double identity[] = {(double)eye[0]->device, (double)(lease ? lease->Ticket() : 0), (double)eye[0]->producerPid};
-        dd_motion_emit(DD_MOTION_TEXTURE, 0, f.render.frame_id, eye[0]->inode, identity, 3);
+        double identity[] = {(double)eye[0]->device, (double)(lease ? lease->Ticket() : 0), (double)eye[0]->producerPid, (double)f.minimumWrite[0], (double)f.minimumWrite[1]};
+        dd_motion_emit(DD_MOTION_TEXTURE, 0, f.render.frame_id, eye[0]->inode, identity, 5);
+        double rightIdentity[] = {(double)eye[1]->device, (double)(lease ? lease->Ticket() : 0),
+                                  (double)eye[1]->producerPid, (double)f.minimumWrite[1]};
+        dd_motion_emit(DD_MOTION_TEXTURE, 1, f.render.frame_id, eye[1]->inode, rightIdentity, 4);
         const bool motionReady = PrepareMotionPixels();
         const bool motionRecord = dd_motion_pixels_recording();
         if (motionRecord && !motionReady) dd_motion_pixels_emit(f.render.frame_id, f.texture[0], nullptr);

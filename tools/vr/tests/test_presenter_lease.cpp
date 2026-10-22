@@ -19,6 +19,11 @@ static int Acquire(int64_t) {
     if (!available) return 0;
     return pthread_mutex_lock(&producerLock) == 0;
 }
+static int AcquireTargets(int64_t deadline,const droiddeck_producer_target *targets) {
+    assert(targets[0].inode==101 && targets[1].inode==102);
+    assert(targets[0].minimum==7 && targets[1].minimum==8);
+    return Acquire(deadline);
+}
 static void Release() {
     assert(!copying);
     assert(pthread_mutex_unlock(&producerLock) == 0);
@@ -34,7 +39,7 @@ struct PresenterTest {
         std::string parent = std::string(directory) + "/droiddeck-steamvr";
         assert(mkdir(parent.c_str(), 0700) == 0);
         droiddeck_producer_server server{};
-        server.acquire = Acquire; server.release = Release; server.quarantine = Quarantine;
+        server.acquire = Acquire; server.acquire_targets = AcquireTargets; server.release = Release; server.quarantine = Quarantine;
         assert(droiddeck_producer_start(&server));
 
         Impl p;
@@ -53,6 +58,7 @@ struct PresenterTest {
         assert(p.CreatePresentSemaphores() && createdSemaphores == 3);
         p.textures_.push_back({10, (VkImage)7, VK_NULL_HANDLE, 1920, 1080, (uint32_t)getpid(), VK_FORMAT_R8G8B8A8_UNORM});
         p.textures_.push_back({20, (VkImage)8, VK_NULL_HANDLE, 1920, 1080, (uint32_t)getpid(), VK_FORMAT_R8G8B8A8_UNORM});
+        p.textures_[0].inode=101;p.textures_[1].inode=102;
         p.vk_.WaitForFences = [](VkDevice, uint32_t, const VkFence *, VkBool32, uint64_t timeout) {
             Retained(); assert(timeout == UINT64_MAX);
             if (copying && copyFailed) return VK_ERROR_DEVICE_LOST;
@@ -104,6 +110,7 @@ struct PresenterTest {
             presents++; return VK_SUCCESS;
         };
         EyeFrame frame{}; frame.texture[0] = 10; frame.texture[1] = 20;
+        frame.minimumWrite[0]=7;frame.minimumWrite[1]=8;
         for (int eye = 0; eye < 2; eye++) frame.bounds[eye][2] = frame.bounds[eye][3] = 1;
         for (auto index : {0u, 2u, 1u, 2u, 0u}) {
             nextImage = index;

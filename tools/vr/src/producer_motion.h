@@ -11,7 +11,7 @@ enum { PM_MEMORY=1, PM_IMAGE, PM_VIEW, PM_FRAMEBUFFER, PM_PASS, PM_COMMAND };
 enum { PM_CLEAR=1, PM_COPY=2, PM_BLIT=4, PM_DRAW=8, PM_RESOLVE=16, PM_LOAD_CLEAR=32 };
 struct pm_write { uint64_t image; unsigned kinds, count; };
 struct pm_object {
-    uint64_t key, device, a, b, serial, recording_gap;
+    uint64_t key, device, a, b, serial, ready_serial, recording_gap;
     unsigned ended;
     unsigned type, count, subpass, active_count;
     uint64_t refs[PM_ATTACHMENTS], active[PM_ATTACHMENTS];
@@ -22,7 +22,7 @@ static struct pm_object pm_objects[PM_OBJECTS];
 static struct pm_object *pm_memories[PM_OBJECTS];
 static unsigned pm_memory_count;
 static pthread_mutex_t pm_lock = PTHREAD_MUTEX_INITIALIZER;
-static unsigned pm_enabled;
+static unsigned pm_enabled, pm_required;
 static uint64_t pm_gaps, pm_serial, pm_gap_counts[PM_GAP_TYPES];
 
 static uint64_t pm_gap_count(unsigned scope) { return __atomic_load_n(&pm_gap_counts[scope],__ATOMIC_RELAXED); }
@@ -32,6 +32,7 @@ static void pm_gap(unsigned scope) {
 }
 static int pm_enter(unsigned scope) {
     if (!pm_enabled) return 0;
+    if (pm_required) return pthread_mutex_lock(&pm_lock)==0;
     if (pthread_mutex_trylock(&pm_lock)) { pm_gap(scope); return 0; }
     return 1;
 }
@@ -75,7 +76,9 @@ static void pm_start(void) {
     if (pm_enabled) return;
     const char *rt=getenv("XDG_RUNTIME_DIR"); if(!rt) rt="/run/droiddeck";
     dd_motion_start(rt,"producer");
-    pm_enabled=__atomic_load_n(&dd_mt.initialized,__ATOMIC_ACQUIRE);
+    const char *lease=getenv("DROIDDECK_VR_PRODUCER_LEASE"), *present=getenv("DROIDDECK_VR_PRESENT");
+    pm_required=lease && !strcmp(lease,"1") && (!present || strcmp(present,"questframes"));
+    pm_enabled=pm_required || __atomic_load_n(&dd_mt.initialized,__ATOMIC_ACQUIRE);
 }
 static struct pm_object *pm_image_memory(uint64_t image) {
     struct pm_object *im=pm_find(PM_IMAGE,image);
@@ -162,6 +165,8 @@ static void pm_submitted(uint64_t serial,VkQueue queue,VkCommandBuffer cmd,int p
                 memcpy(writes[count++].v,v,sizeof(v));
                 if(phase==1) { m->serial=serial;m->count=w->kinds;m->refs[0]=(uint64_t)dd_motion_now(); }
             }
+            if(phase==1 && valid && !pm_gap_count(PM_META_GAP))
+                for(unsigned i=0;i<c->count;i++)pm_image_memory(c->writes[i].image)->ready_serial=serial;
         }else pm_gap(PM_SUBMIT_GAP);
         pm_leave();
     }
@@ -188,4 +193,25 @@ static void pm_ready(uint64_t ticket) {
                      (double)pm_gap_count(PM_SUBMIT_GAP),(double)pm_gap_count(PM_LEASE_GAP),2,count};
     dd_motion_emit(DD_MOTION_PRODUCER_LEASE,0,ticket,0,health,7);
     for(unsigned i=0;i<count;i++)dd_motion_emit(DD_MOTION_PRODUCER_LEASE,1,ticket,memories[i].inode,memories[i].v,5);
+}
+
+static uint64_t pm_reserve(void) {
+    return pm_required ? __atomic_load_n(&pm_serial,__ATOMIC_ACQUIRE)+1 : 0;
+}
+
+static int pm_targets_ready(const struct droiddeck_producer_target targets[2]) {
+    if(!pm_required || pm_gap_count(PM_META_GAP))return -1;
+    for(unsigned eye=0;eye<2;eye++)if(!targets[eye].inode || !targets[eye].minimum)return -1;
+    int ready=1;
+    pthread_mutex_lock(&pm_lock);
+    for(unsigned eye=0;eye<2;eye++) {
+        uint64_t latest=0;
+        for(unsigned i=0;i<pm_memory_count;i++) {
+            const struct pm_object *m=pm_memories[i];
+            if(m->a==targets[eye].inode && m->b==targets[eye].device && m->ready_serial>latest)latest=m->ready_serial;
+        }
+        if(latest<targets[eye].minimum)ready=0;
+    }
+    pthread_mutex_unlock(&pm_lock);
+    return ready;
 }

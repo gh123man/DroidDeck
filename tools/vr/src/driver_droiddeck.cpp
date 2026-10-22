@@ -34,6 +34,7 @@
 #include "pad_controller_config.h"
 #include "joycon_shm.h"
 #include "presenter.h"
+#include "producer_lease.h"
 #include "spatial_tracking.h"
 #include "luma_joycon.h"
 #include "render_target.h"
@@ -273,6 +274,7 @@ public:
     }
     struct Set {
         SharedTextureHandle_t handles[3] = {};
+        uint64_t minimumWrite[3] = {};
         int fds[3] = {-1, -1, -1};
         uint32_t pid = 0, index = 0;
         SwapTextureSetDesc_t desc = {};
@@ -334,6 +336,9 @@ public:
             if (!s) { (*indices)[e] = 0; continue; }
             s->index = (s->index + 1) % 3;
             (*indices)[e] = s->index;
+            const char *lease=getenv("DROIDDECK_VR_PRODUCER_LEASE"), *present=getenv("DROIDDECK_VR_PRESENT");
+            if(lease && !strcmp(lease,"1") && (!present || strcmp(present,"questframes")))
+                s->minimumWrite[s->index]=droiddeck_producer_reserve(s->pid);
         }
     }
 
@@ -354,6 +359,12 @@ public:
             }
             for (int e = 0; e < 2; e++) {
                 frame_.texture[e] = eyes[e].hTexture;
+                frame_.minimumWrite[e] = 0;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if(Set *set=Find(eyes[e].hTexture))for(int i=0;i<3;i++)
+                        if(set->handles[i]==eyes[e].hTexture)frame_.minimumWrite[e]=set->minimumWrite[i];
+                }
                 frame_.bounds[e][0] = eyes[e].bounds.uMin; frame_.bounds[e][1] = eyes[e].bounds.vMin;
                 frame_.bounds[e][2] = eyes[e].bounds.uMax; frame_.bounds[e][3] = eyes[e].bounds.vMax;
                 std::memcpy(frame_.render.projection[e], eyes[e].mProjection.m, sizeof(eyes[e].mProjection.m));

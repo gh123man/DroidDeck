@@ -69,6 +69,14 @@ int main(void) {
     pm_submitted(11,(VkQueue)99,cmd,1);
     assert(!pthread_mutex_unlock(&pm_lock));
     assert(dd_mt.rings[0].count==before+1 && records[before].flags==4 && records[before].v[1]==0);
+    pm_required=1;pm_serial=12;
+    struct droiddeck_producer_target targets[2]={{12345,678,pm_reserve()},{12345,678,pm_reserve()}};
+    assert(targets[0].minimum==13 && !pm_targets_ready(targets));
+    pm_submitted(13,(VkQueue)99,cmd,1);
+    assert(pm_targets_ready(targets)==1);
+    targets[1].inode=99999;assert(!pm_targets_ready(targets));
+    targets[1].inode=12345;pm_gap(PM_META_GAP);assert(pm_targets_ready(targets)==-1);
+    pm_required=0;
     dd_mt.active=0;
     puts("PASS: producer image write identity, command reset, queued versus completed lease generations, failed submit, and nonblocking coverage gaps");
 }
