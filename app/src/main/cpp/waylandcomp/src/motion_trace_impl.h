@@ -11,6 +11,9 @@
 #define DD_MOTION_CAPACITY 65536
 #endif
 #define DD_MOTION_SLOTS 8
+#ifndef DD_MOTION_PIXEL_CAPACITY
+#define DD_MOTION_PIXEL_CAPACITY 2048
+#endif
 
 struct dd_motion_ring {
     struct dd_motion_record *records;
@@ -24,6 +27,9 @@ static struct {
     int64_t epoch, end;
     char directory[512], process[16];
     struct dd_motion_ring rings[DD_MOTION_SLOTS];
+    struct dd_motion_pixels *pixels;
+    unsigned pixels_enabled, pixels_busy;
+    uint64_t pixels_count, pixels_dropped;
 } dd_mt;
 static __thread int dd_mt_slot = -1;
 static __thread uint64_t dd_mt_source;
@@ -88,12 +94,39 @@ uint64_t dd_motion_source(uint64_t sensor_ns, int64_t received_ns, uint32_t flag
 void dd_motion_clear_source(void) { dd_mt_source = 0; }
 uint64_t dd_motion_source_id(void) { return dd_mt_source; }
 
+int dd_motion_pixels_enabled(void) {
+    return __atomic_load_n(&dd_mt.active, __ATOMIC_ACQUIRE) &&
+        __atomic_load_n(&dd_mt.pixels_enabled, __ATOMIC_ACQUIRE);
+}
+int dd_motion_pixels_recording(void) {
+    if (!dd_motion_pixels_enabled()) return 0;
+    int64_t now = dd_motion_now();
+    return now >= __atomic_load_n(&dd_mt.epoch, __ATOMIC_RELAXED) &&
+        now < __atomic_load_n(&dd_mt.end, __ATOMIC_RELAXED);
+}
+void dd_motion_pixels_emit(uint64_t frame, uint64_t texture, const void *rgba) {
+    unsigned generation = __atomic_load_n(&dd_mt.active, __ATOMIC_ACQUIRE);
+    if (!generation || !dd_motion_pixels_enabled()) return;
+    __atomic_store_n(&dd_mt.pixels_busy, 1, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&dd_mt.active, __ATOMIC_SEQ_CST) == generation && dd_motion_pixels_recording()) {
+        if (rgba && dd_mt.pixels_count < DD_MOTION_PIXEL_CAPACITY) {
+            struct dd_motion_pixels *p = &dd_mt.pixels[dd_mt.pixels_count++];
+            p->ns = dd_motion_now(); p->frame = frame; p->texture = texture;
+            memcpy(p->rgba, rgba, sizeof(p->rgba));
+        } else dd_mt.pixels_dropped++;
+    }
+    __atomic_store_n(&dd_mt.pixels_busy, 0, __ATOMIC_SEQ_CST);
+}
+
 static void dd_mt_quiesce(void) {
     __atomic_store_n(&dd_mt.active, 0, __ATOMIC_SEQ_CST);
     for (unsigned i = 0; i < DD_MOTION_SLOTS; i++)
         while (__atomic_load_n(&dd_mt.rings[i].busy, __ATOMIC_SEQ_CST)) {
             struct timespec pause = {0, 1000000}; nanosleep(&pause, NULL);
         }
+    while (__atomic_load_n(&dd_mt.pixels_busy, __ATOMIC_SEQ_CST)) {
+        struct timespec pause = {0, 1000000}; nanosleep(&pause, NULL);
+    }
 }
 
 static int dd_mt_export(uint64_t run, unsigned mode) {
@@ -122,6 +155,29 @@ static int dd_mt_export(uint64_t run, unsigned mode) {
             fwrite(ring->records, sizeof(struct dd_motion_record), ring->count, f) == ring->count;
         if (fclose(f) != 0) written = 0;
         if (!written || rename(tmp, path) != 0) ok = 0;
+    }
+    if (dd_mt.pixels_enabled) {
+        char path[768], tmp[784];
+        snprintf(path, sizeof(path), "%s/motion-%llu-%s-%d.pixels", dd_mt.directory,
+                 (unsigned long long)run, dd_mt.process, getpid());
+        snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+        struct dd_motion_header h;
+        memset(&h, 0, sizeof(h)); memcpy(h.magic, "DDPIXELS", 8);
+        h.version = 1; h.record_size = sizeof(struct dd_motion_pixels); h.run = run;
+        h.start_ns = dd_mt.epoch; h.end_ns = dd_mt.end;
+        h.count = dd_mt.pixels_count; h.dropped = dd_mt.pixels_dropped;
+        h.mode = mode; h.pid = getpid(); h.capacity = DD_MOTION_PIXEL_CAPACITY;
+        snprintf(h.process, sizeof(h.process), "%s", dd_mt.process);
+        h.reserved[0] = (uint64_t)dd_motion_now(); h.reserved[1] = (int64_t)h.reserved[0] >= h.end_ns;
+        h.reserved[2] = DD_MOTION_PIXEL_WIDTH; h.reserved[3] = DD_MOTION_PIXEL_HEIGHT;
+        FILE *f = fopen(tmp, "wb");
+        if (!f) ok = 0;
+        else {
+            int written = fwrite(&h, sizeof(h), 1, f) == 1 &&
+                fwrite(dd_mt.pixels, sizeof(struct dd_motion_pixels), h.count, f) == h.count;
+            if (fclose(f) != 0) written = 0;
+            if (!written || rename(tmp, path) != 0) ok = 0;
+        }
     }
     return ok;
 }
@@ -163,10 +219,23 @@ static void *dd_mt_control(void *unused) {
                 }
                 ring->count = ring->dropped = 0;
             }
+            char pixel_flag[768];
+            snprintf(pixel_flag, sizeof(pixel_flag), "%s/motion-pixels", dd_mt.directory);
+            unsigned pixels = !strcmp(dd_mt.process, "driver") && access(pixel_flag, F_OK) == 0;
+            if (pixels && !dd_mt.pixels) {
+                dd_mt.pixels = (struct dd_motion_pixels *)calloc(DD_MOTION_PIXEL_CAPACITY, sizeof(*dd_mt.pixels));
+                if (!dd_mt.pixels) ready = 0;
+                else {
+                    volatile char *p = (volatile char *)dd_mt.pixels;
+                    for (size_t j = 0; j < DD_MOTION_PIXEL_CAPACITY * sizeof(*dd_mt.pixels); j += 4096) p[j] = 0;
+                }
+            }
+            dd_mt.pixels_count = dd_mt.pixels_dropped = 0;
+            __atomic_store_n(&dd_mt.pixels_enabled, pixels, __ATOMIC_RELEASE);
             if (ready && epoch > dd_motion_now()) {
                 run = last_run = requested; mode = requested_mode; exported = 0;
                 __atomic_store_n(&dd_mt.epoch, (int64_t)epoch, __ATOMIC_RELAXED);
-                dd_mt.end = epoch + (int64_t)duration_ms * 1000000;
+                __atomic_store_n(&dd_mt.end, epoch + (int64_t)duration_ms * 1000000, __ATOMIC_RELAXED);
                 __atomic_store_n(&dd_mt.mode, mode, __ATOMIC_RELEASE);
                 __atomic_store_n(&dd_mt.unregistered, 0, __ATOMIC_RELAXED);
                 if (trace) __atomic_store_n(&dd_mt.active, ++generation, __ATOMIC_RELEASE);

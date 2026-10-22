@@ -2,6 +2,7 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from tools.motion.pixels import PREFIX, read_pixels, correlate
 from tools.motion.analyze import Event, HEADER, RECORD, analyze, angle, matrix_quat, read, synthetic
 
 EPOCH = 1_000_000_000
@@ -70,6 +71,25 @@ class MotionTraceTests(unittest.TestCase):
         report = analyze([dict(META, finished=False)], [])
         self.assertTrue(report['interrupted'])
         self.assertFalse(report['complete'])
+
+    def test_pixels_roundtrip_truncation_and_capture_mismatch(self):
+        header = HEADER.pack(b'DDPIXELS', 1, 36888, 1, EPOCH, EPOCH+30_000_000_000,
+                             1, 0, 0, 2, 42, 2048, 0, b'driver', EPOCH+30_000_000_000, 1, 128, 72)
+        raw = header + PREFIX.pack(EPOCH+1, 9, 10) + bytes([123])*36864
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)/'trace.pixels'; p.write_bytes(raw)
+            meta, frames = read_pixels(p)
+            self.assertEqual(frames[0]['texture'], 10)
+            self.assertEqual(frames[0]['rgba'], bytes([123])*36864)
+            report = correlate(meta, frames*2, [])
+            self.assertFalse(report['frames'][0]['layer_match'])
+            self.assertTrue(report['frames'][1]['repeats_previous'])
+            p.write_bytes(raw[:-1])
+            with self.assertRaises(ValueError): read_pixels(p)
+            trace = Path(tmp)/'other.bin'
+            trace.write_bytes(HEADER.pack(b'DDMOTION', 1, 128, 2, EPOCH, EPOCH+30_000_000_000,
+                                          0, 0, 0, 2, 42, 65536, 0, b'driver', 0, 1, 0, 0))
+            with self.assertRaises(ValueError): correlate(meta, frames, [trace])
 
     def test_binary_roundtrip_and_truncation(self):
         e = driver(1, EPOCH+1_000_000)

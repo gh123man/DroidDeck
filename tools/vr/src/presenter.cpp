@@ -691,6 +691,7 @@ private:
 
     void DestroyCapture() {
         if (!dev_) return;
+        if (motionMapping_) { vk_.UnmapMemory(dev_, readbackMemory_); motionMapping_ = nullptr; }
         if (captureImage_) vk_.DestroyImage(dev_, captureImage_, nullptr);
         if (captureMemory_) vk_.FreeMemory(dev_, captureMemory_, nullptr);
         if (readbackBuffer_) vk_.DestroyBuffer(dev_, readbackBuffer_, nullptr);
@@ -820,6 +821,44 @@ private:
         return sent;
     }
 
+    bool PrepareMotionPixels() {
+        if (!dd_motion_pixels_enabled()) return false;
+        DroidDeckXrFrameHeader size{};
+        size.width = DD_MOTION_PIXEL_WIDTH; size.height = DD_MOTION_PIXEL_HEIGHT;
+        size.bytes = DD_MOTION_PIXEL_BYTES;
+        if (!PrepareCapture(size)) return false;
+        if (!motionMapping_ && vk_.MapMemory(dev_, readbackMemory_, 0, VK_WHOLE_SIZE, 0, &motionMapping_) != VK_SUCCESS)
+            return false;
+        return true;
+    }
+
+    void RecordMotionPixels(const EyeFrame &f, const Imported &eye) {
+        auto before = Barrier(captureImage_, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                              0, VK_ACCESS_TRANSFER_WRITE_BIT);
+        vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                               0, 0, nullptr, 0, nullptr, 1, &before);
+        VkImageBlit blit{};
+        blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        blit.srcOffsets[0] = {(int32_t)(f.bounds[0][0] * eye.width), (int32_t)(f.bounds[0][1] * eye.height), 0};
+        blit.srcOffsets[1] = {(int32_t)(f.bounds[0][2] * eye.width), (int32_t)(f.bounds[0][3] * eye.height), 1};
+        blit.dstOffsets[1] = {DD_MOTION_PIXEL_WIDTH, DD_MOTION_PIXEL_HEIGHT, 1};
+        vk_.CmdBlitImage(cmd_, eye.image, VK_IMAGE_LAYOUT_GENERAL, captureImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         1, &blit, VK_FILTER_LINEAR);
+        auto after = Barrier(captureImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+        vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                               0, 0, nullptr, 0, nullptr, 1, &after);
+        VkBufferImageCopy copy{}; copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        copy.imageExtent = {DD_MOTION_PIXEL_WIDTH, DD_MOTION_PIXEL_HEIGHT, 1};
+        vk_.CmdCopyImageToBuffer(cmd_, captureImage_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readbackBuffer_, 1, &copy);
+        VkBufferMemoryBarrier host{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        host.srcQueueFamilyIndex = host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        host.buffer = readbackBuffer_; host.size = VK_WHOLE_SIZE;
+        vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                               0, 0, nullptr, 1, &host, 0, nullptr);
+    }
+
     bool Draw(const EyeFrame &f) {
         auto trace = [&f](unsigned stage, uint64_t related = 0, VkResult result = VK_SUCCESS) {
             double v[] = {(double)result};
@@ -840,6 +879,9 @@ private:
             if (!lease->Acquired()) { leaseMisses_++; return false; }
         }
         if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
+        const bool motionReady = PrepareMotionPixels();
+        const bool motionRecord = dd_motion_pixels_recording();
+        if (motionRecord && !motionReady) dd_motion_pixels_emit(f.render.frame_id, f.texture[0], nullptr);
         uint32_t idx = 0;
         trace(3);
         VkResult r = vk_.AcquireNextImageKHR(dev_, swapchain_, 100000000ull, acquired_, VK_NULL_HANDLE, &idx);
@@ -881,6 +923,7 @@ private:
             vk_.CmdBlitImage(cmd_, eye[e]->image, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
                              VK_FILTER_LINEAR);
         }
+        if (motionRecord && motionReady) RecordMotionPixels(f, *eye[0]);
         VkImageMemoryBarrier post[3] = {
             Barrier(dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0),
             Barrier(eye[0]->image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_READ_BIT, 0, qfam_,
@@ -905,6 +948,12 @@ private:
         }
         if (lease) { lease->EndGpu(); if (!lease->Release()) { Fail(); return false; } }
         trace(8, idx);
+        if (motionRecord && motionReady) {
+            VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+            range.memory = readbackMemory_; range.size = VK_WHOLE_SIZE;
+            const bool valid = vk_.InvalidateMappedMemoryRanges(dev_, 1, &range) == VK_SUCCESS;
+            dd_motion_pixels_emit(f.render.frame_id, f.texture[0], valid ? motionMapping_ : nullptr);
+        }
         VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered, 1, &swapchain_, &idx, nullptr};
         trace(9, idx);
         r = vk_.QueuePresentKHR(queue_, &pi);
@@ -937,6 +986,7 @@ private:
     VkImage captureImage_ = VK_NULL_HANDLE;
     VkDeviceMemory captureMemory_ = VK_NULL_HANDLE, readbackMemory_ = VK_NULL_HANDLE;
     VkBuffer readbackBuffer_ = VK_NULL_HANDLE;
+    void *motionMapping_ = nullptr;
     uint32_t captureWidth_ = 0, captureHeight_ = 0;
     std::atomic<uint64_t> submitted_{0};
     std::thread thread_;

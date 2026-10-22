@@ -519,3 +519,38 @@ failure count/trace signature. Keep a change for this symptom only if that signa
 improves reproducibly without unacceptable latency or throughput cost. Investigate
 debug/release or CPU/GPU scheduling if traces show workload-dependent stalls; do
 not use it as another unmeasured build swap.
+
+#### Controlled synthetic results, 2026-10-22
+
+Installed diagnostic APK SHA256
+`d5f182aa3bef6eb104a78247e85ddaf77e4cfd567b3b9f8aa0482832e2b5eef7`,
+source `0d20c7064bc4b57bc6766160bfa81ffaef8375eb`, driver
+`28e81d15cf3a40137793240eccfd60589cbe5cd9847e0ce665f6906fb315f325`.
+Retroid Pocket 6, XREAL One, SBS 3840×1080 at 60 Hz, Follow mode and Stabilizer off,
+same SteamVR session. Each capture window was 25 seconds.
+
+| Run | Input | Per-frame trace | Wearer report |
+|---|---|---|---|
+| 1792678252796 | live slow left/right turns | on | abrupt snapping |
+| 1792678359490 | ±30° sine yaw, 8-second period, head still | on | abrupt snapping during sweep |
+| 1792678593616 | identical sine yaw, head still | off | still snaps |
+
+Both recorded runs exported all boundaries with zero drops and no recenter/reset
+or sequence reversal. In the synthetic run, all 10,302 driver samples matched the
+analytic waveform, and the actual callback poses matched those samples. All 1,438
+first-left SubmitLayer matrices were valid and varied with the synthetic sweep.
+Layer inter-arrival median was 16.676 ms, p99 33.400 ms, maximum 34.651 ms; maximum
+angular step was 0.806°, within the waveform speed envelope for those intervals.
+An offline yaw fit found about 2 ms age relative to submission, median absolute
+residual 0.00861°, maximum 0.18733°, with no backward steps when the expected
+step exceeded 0.1°. This checks metadata, not actual rendered image content.
+
+The reproduction does not require live sensor input or per-frame trace recording.
+It does not establish that trace recording has no performance cost. The first
+observed discontinuity remains the wearer's visual report; recorded pose boundaries
+have not reproduced it. Stop changing sensor filters and synchronization until
+actual image content is measured. The next opt-in probe reads the actual left-eye
+source pixels in the driver's existing GPU copy, joined to SubmitLayer handles.
+Compare its added GPU cost with the pose-only run before interpreting results.
+Raw captures currently reside in `/tmp/droiddeck-motion/{live-1,sine-1,sine-off-1}`
+on the development Mac and are not committed to the repository.

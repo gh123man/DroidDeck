@@ -43,6 +43,17 @@ uint64_t dd_motion_source(uint64_t sensor_ns, int64_t received_ns, uint32_t flag
                           const double values[10]);
 void dd_motion_clear_source(void);
 uint64_t dd_motion_source_id(void);
+#define DD_MOTION_PIXEL_WIDTH 128
+#define DD_MOTION_PIXEL_HEIGHT 72
+#define DD_MOTION_PIXEL_BYTES (DD_MOTION_PIXEL_WIDTH * DD_MOTION_PIXEL_HEIGHT * 4)
+struct dd_motion_pixels {
+    int64_t ns;
+    uint64_t frame, texture;
+    unsigned char rgba[DD_MOTION_PIXEL_BYTES];
+};
+int dd_motion_pixels_enabled(void);
+int dd_motion_pixels_recording(void);
+void dd_motion_pixels_emit(uint64_t frame, uint64_t texture, const void *rgba);
 
 #ifdef __cplusplus
 }

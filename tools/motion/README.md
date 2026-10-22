@@ -108,3 +108,36 @@ of copied pixels. Android commit and render IDs are local to those stages; no
 cross-process pixel identity is claimed. If driver and render poses are smooth
 while the wearer sees a snap, the next probe must identify source pixels through
 copy/composition (or capture optical output), not another synchronization fix.
+
+## Optional source-eye pixel probe
+
+`capture.py arm --mode sine --trace on --pixels --seconds 25 --delay 10`
+adds a 128×72 RGBA readback of the actual first left-eye texture and its submitted
+crop. The driver adds the blit/readback to the existing copy command buffer,
+while retaining producer ownership, and copies mapped bytes only after that
+submission's existing GPU fence completes. No additional submission or fence
+wait is introduced. GPU allocation/mapping occurs during warm-up; the controller
+prefaults a separate 2,048-frame (about 72 MiB) buffer before acknowledging the run.
+This is opt-in and adds GPU work and CPU copying; compare copy durations with the
+pose-only baseline. It does not measure Android output or the optical display.
+
+The exported `.pixels` file has a 128-byte header with magic `DDPIXELS`, version
+1, record size 36,888, and the usual run/window/count/drop fields. Reserved words
+2/3 hold width/height. Each record contains int64 host readback timestamp, uint64
+Present ID, uint64 source texture handle, and 36,864 RGBA bytes. The pixels come
+from the imported source texture; the Present ID labels the copy request, not
+proof that the producer wrote the correct generation. Failed readbacks/overflow
+count as drops. Files are exported only after capture.
+
+```sh
+python3 tools/motion/pixels.py /tmp/capture/FILE.pixels \
+  --traces /tmp/capture/*.bin --output /tmp/capture/pixels.json \
+  --images /tmp/capture/images
+```
+
+This validates capture compatibility, joins source handles to submitted layers,
+and can export lossless PPM images. Equal hashes establish equal images only;
+scene animation, low resolution, and stationary intervals limit interpretation.
+Inspect image movement against the synthetic waveform before claiming the first
+failing boundary. A smooth source readback still leaves Android composition and
+physical presentation unverified.

@@ -1,6 +1,7 @@
 #define _DARWIN_C_SOURCE 1
 #define _POSIX_C_SOURCE 200809L
 #define DD_MOTION_CAPACITY 64
+#define DD_MOTION_PIXEL_CAPACITY 2
 #include "../../../app/src/main/cpp/waylandcomp/src/motion_trace_impl.h"
 #include <assert.h>
 #include <dirent.h>
@@ -22,21 +23,35 @@ static void *writer(void *arg) {
     }
     return NULL;
 }
+static void *pixel_writer(void *unused) {
+    (void)unused;
+    while (!dd_motion_pixels_recording()) pause_ms(1);
+    unsigned char rgba[DD_MOTION_PIXEL_BYTES]; memset(rgba, 123, sizeof(rgba));
+    dd_motion_pixels_emit(45, 100, rgba);
+    dd_motion_pixels_emit(46, 100, rgba);
+    dd_motion_pixels_emit(47, 100, rgba);
+    return NULL;
+}
 int main(void) {
     char dir[] = "/tmp/dd-motion-test-XXXXXX"; assert(mkdtemp(dir));
-    dd_motion_start(dir, "test"); assert(dd_mt.initialized == 0);
+    dd_motion_start(dir, "driver"); assert(dd_mt.initialized == 0);
     char enabled[768]; snprintf(enabled, sizeof(enabled), "%s/motion-enabled", dir);
     FILE *enable = fopen(enabled, "w"); assert(enable); fclose(enable);
-    dd_motion_start(dir, "test");
+    snprintf(enabled, sizeof(enabled), "%s/motion-pixels", dir);
+    enable = fopen(enabled, "w"); assert(enable); fclose(enable);
+    dd_motion_start(dir, "driver");
     int64_t epoch = dd_motion_now() + 600000000;
     arm(dir, 1, 1, epoch);
+    pthread_t pixel_thread;
+    assert(pthread_create(&pixel_thread, NULL, pixel_writer, NULL) == 0);
     pthread_t writers[3]; int64_t end = epoch + 150000000;
     for (int i = 0; i < 3; i++) assert(pthread_create(&writers[i], NULL, writer, &end) == 0);
     for (int i = 0; i < 3; i++) pthread_join(writers[i], NULL);
+    pthread_join(pixel_thread, NULL);
     pause_ms(300);
     uint64_t count = 0, dropped = 0;
     for (int i = 0; i < DD_MOTION_SLOTS; i++) {
-        char path[768]; snprintf(path, sizeof(path), "%s/motion-1-test-%d-%d.bin", dir, getpid(), i);
+        char path[768]; snprintf(path, sizeof(path), "%s/motion-1-driver-%d-%d.bin", dir, getpid(), i);
         FILE *f = fopen(path, "rb"); assert(f);
         struct dd_motion_header h; assert(fread(&h, sizeof(h), 1, f) == 1);
         assert(h.count <= DD_MOTION_CAPACITY && h.start_ns == epoch && h.mode == 2 && h.reserved[1]);
@@ -49,9 +64,17 @@ int main(void) {
         assert(fgetc(f) == EOF); fclose(f);
     }
     assert(count == 3 * DD_MOTION_CAPACITY && dropped > 0);
+    char pixel_path[768]; snprintf(pixel_path, sizeof(pixel_path), "%s/motion-1-driver-%d.pixels", dir, getpid());
+    FILE *pf = fopen(pixel_path, "rb"); assert(pf);
+    struct dd_motion_header ph; assert(fread(&ph, sizeof(ph), 1, pf) == 1);
+    assert(!memcmp(ph.magic, "DDPIXELS", 8) && ph.count == 2 && ph.dropped == 1 && ph.reserved[1]);
+    struct dd_motion_pixels pixel;
+    assert(fread(&pixel, sizeof(pixel), 1, pf) == 1);
+    assert(pixel.frame == 45 && pixel.texture == 100 && pixel.rgba[0] == 123 && pixel.rgba[DD_MOTION_PIXEL_BYTES-1] == 123);
+    fclose(pf);
     epoch = dd_motion_now() + 600000000;
     arm(dir, 2, 0, epoch); pause_ms(1000);
-    char path[768]; snprintf(path, sizeof(path), "%s/motion-2-test-%d-0.bin", dir, getpid());
+    char path[768]; snprintf(path, sizeof(path), "%s/motion-2-driver-%d-0.bin", dir, getpid());
     FILE *f = fopen(path, "rb"); assert(f);
     struct dd_motion_header h; assert(fread(&h, sizeof(h), 1, f) == 1); fclose(f);
     assert(h.count == 0 && h.dropped == 0);
@@ -61,7 +84,7 @@ int main(void) {
     epoch = dd_motion_now() + 600000000;
     arm(dir, 3, 1, epoch); pause_ms(300);
     dd_motion_stop();
-    snprintf(path, sizeof(path), "%s/motion-3-test-%d-0.bin", dir, getpid());
+    snprintf(path, sizeof(path), "%s/motion-3-driver-%d-0.bin", dir, getpid());
     f = fopen(path, "rb"); assert(f);
     assert(fread(&h, sizeof(h), 1, f) == 1); fclose(f);
     assert(h.reserved[1] == 0);
