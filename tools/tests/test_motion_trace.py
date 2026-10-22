@@ -2,6 +2,7 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from tools.motion.producer import correlate_producer
 from tools.motion.pixels import PREFIX, read_pixels, correlate
 from tools.motion.analyze import Event, HEADER, RECORD, analyze, angle, fit_layer_yaw, matrix_quat, read, synthetic
 
@@ -113,6 +114,23 @@ class MotionTraceTests(unittest.TestCase):
         self.assertEqual([r['repeats_frame'] for r in rows[3:]], [100,101,102])
         self.assertTrue(all(r['repeat_distance'] == 3 and r['repeat_same_texture'] for r in rows[3:]))
         self.assertTrue(all(r['repeat_age_ms'] == 48 for r in rows[3:]))
+
+    def test_producer_repeat_classification_requires_complete_generation_evidence(self):
+        meta=dict(META,process='producer',pid=77,finished=True)
+        pixels=dict(capture=META,frames=[dict(frame=1,ns=EPOCH+10,seconds=0,
+                     repeats_frame=None,layer_match=True),dict(frame=4,ns=EPOCH+40,seconds=.03,
+                     repeats_frame=1,layer_match=True)])
+        def event(t,i,related,kind,flags,values):
+            return Event(EPOCH+t,i,related,kind,flags,tuple(values)+(0,)*(12-len(values)))
+        events=[event(8,1,99,15,0,[8,10,77]),event(7,10,0,14,0,[0]),
+                event(7,10,99,14,1,[8,5,8,0,6]),event(38,4,99,15,0,[8,11,77]),
+                event(37,11,0,14,0,[0]),event(37,11,99,14,1,[8,5,8,0,6])]
+        result=correlate_producer(pixels,[meta],events)
+        self.assertEqual(result['counts']['repeat_without_new_completed_commands'],1)
+        events[-1]=event(37,11,99,14,1,[8,6,8,0,35])
+        self.assertEqual(correlate_producer(pixels,[meta],events)['counts']['repeat_despite_new_completed_commands'],1)
+        events[-1]=event(37,11,99,14,1,[8,6,8,1,35])
+        self.assertEqual(correlate_producer(pixels,[meta],events)['repeated_frames'][0]['classification'],'inconclusive')
 
     def test_binary_roundtrip_and_truncation(self):
         e = driver(1, EPOCH+1_000_000)

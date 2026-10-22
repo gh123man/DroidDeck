@@ -294,7 +294,27 @@ for(uint32_t i=0;i<count;i++) {
 }pm_leave();}next(cmd,count,children);
 }
 
+static void VKAPI_CALL PM_CmdDrawIndirectCount(VkCommandBuffer cmd,VkBuffer buffer,VkDeviceSize offset,
+        VkBuffer count_buffer,VkDeviceSize count_offset,uint32_t max_count,uint32_t stride) {
+    PFN_vkCmdDrawIndirectCount next=(PFN_vkCmdDrawIndirectCount)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdDrawIndirectCount");
+    if(!next)next=(PFN_vkCmdDrawIndirectCount)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdDrawIndirectCountKHR");
+    if(max_count)pm_draw(cmd);
+    next(cmd,buffer,offset,count_buffer,count_offset,max_count,stride);
+}
+static void VKAPI_CALL PM_CmdDrawIndexedIndirectCount(VkCommandBuffer cmd,VkBuffer buffer,VkDeviceSize offset,
+        VkBuffer count_buffer,VkDeviceSize count_offset,uint32_t max_count,uint32_t stride) {
+    PFN_vkCmdDrawIndexedIndirectCount next=(PFN_vkCmdDrawIndexedIndirectCount)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdDrawIndexedIndirectCount");
+    if(!next)next=(PFN_vkCmdDrawIndexedIndirectCount)dev_for(cmd)->gdpa(dev_for(cmd)->handle,"vkCmdDrawIndexedIndirectCountKHR");
+    if(max_count)pm_draw(cmd);
+    next(cmd,buffer,offset,count_buffer,count_offset,max_count,stride);
+}
+
 static PFN_vkVoidFunction pm_hook(const char *name) {
+if(!strcmp(name,"vkCmdDrawIndirectCount"))return (PFN_vkVoidFunction)PM_CmdDrawIndirectCount;
+if(!strcmp(name,"vkCmdDrawIndirectCountKHR"))return (PFN_vkVoidFunction)PM_CmdDrawIndirectCount;
+if(!strcmp(name,"vkCmdDrawIndexedIndirectCount"))return (PFN_vkVoidFunction)PM_CmdDrawIndexedIndirectCount;
+if(!strcmp(name,"vkCmdDrawIndexedIndirectCountKHR"))return (PFN_vkVoidFunction)PM_CmdDrawIndexedIndirectCount;
+
 
 if(!strcmp(name,"vkAllocateMemory"))return (PFN_vkVoidFunction)PM_AllocateMemory;
 
