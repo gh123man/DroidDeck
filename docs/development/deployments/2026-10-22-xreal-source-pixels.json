@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-22",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "purpose": "Measure actual left-eye source pixels during deterministic yaw; no synchronization or filtering change",
+  "source_commit": "a6d0117d7802eb0caf3023ca0ebd24a3630d039c",
+  "apk_sha256": "2ec89adba9b12d822865b109c7688b60b5e1aa66114efa20f0c74e7d5dc05429",
+  "base_apk_sha256": "d5f182aa3bef6eb104a78247e85ddaf77e4cfd567b3b9f8aa0482832e2b5eef7",
+  "compositor_sha256": "c725fdf185aa30e4842e513cf7094c1c1724bb9bfc7d535bc9beb2d4a83045c4",
+  "driver_sha256": "9839d70bddb294a0e7f6d31e4a297a6836401d94911392444dea6df676f115cc",
+  "changed_assets": [
+    "assets/linuxfs/usr/local/lib/droiddeck-vr/droiddeck/bin/linuxarm64/driver_droiddeck.so",
+    "lib/arm64-v8a/libdroiddeckwayland.so"
+  ],
+  "signer_sha256": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+  "ci_url": "https://github.com/gh123man/DroidDeck/actions/runs/39797160998",
+  "pre_install_validation": [
+    "Final source Android compositor artifact downloaded and source commit verified.",
+    "Final-source native CI log confirms 35 Python checks plus presenter completion/lease/pixel-copy assertions, bounded concurrent recorder, and compositor submission tests passed. Workflow/check status remained stale as queued after logs were complete.",
+    "13 analyzer tests and bounded recorder test also passed locally; ARM64 driver built successfully.",
+    "APK payload comparison permits exactly the driver asset and compositor library; signature and alignment verified."
+  ],
+  "build_method": "Previous diagnostic APK donor, unchanged Kotlin/DEX. Zig 0.13.0 ARM64 Linux driver -O2; CI NDK r27d Android compositor Debug. Build-tools 35 alignment and repository test-key signing.",
+  "limitations": [
+    "Not a full Gradle APK build; donor app version label inherited.",
+    "Optional 128x72 source-eye readback adds GPU work and CPU copying; compare measured timings with baseline.",
+    "Source pixels do not prove Android composition or optical output; hardware capture pending."
+  ]
+}
