@@ -541,8 +541,8 @@ analytic waveform, and the actual callback poses matched those samples. All 1,43
 first-left SubmitLayer matrices were valid and varied with the synthetic sweep.
 Layer inter-arrival median was 16.676 ms, p99 33.400 ms, maximum 34.651 ms; maximum
 angular step was 0.806°, within the waveform speed envelope for those intervals.
-An offline yaw fit found about 2 ms age relative to submission, median absolute
-residual 0.00861°, maximum 0.18733°, with no backward steps when the expected
+The analyzer’s reproducible yaw fit found about 2 ms age relative to submission, median absolute
+residual 0.00881°, maximum 0.18792°, with no backward steps when the expected
 step exceeded 0.1°. This checks metadata, not actual rendered image content.
 
 The reproduction does not require live sensor input or per-frame trace recording.

@@ -92,6 +92,31 @@ def stats(values):
     return dict(n=len(v), p50=v[len(v)//2], p99=v[min(len(v)-1, int(len(v)*.99))], max=v[-1])
 
 
+def fit_layer_yaw(events, epoch):
+    samples = []
+    for e in events:
+        if e.kind != 5 or e.flags != 0: continue
+        try: matrix_quat(e.v)
+        except ValueError: continue
+        samples.append(((e.ns-epoch)*1e-9, math.degrees(math.atan2(e.v[2], e.v[10]))))
+    if len(samples) < 2: return None
+    def residuals(shift):
+        return [yaw-30*math.sin((t+shift)*math.pi/4) for t,yaw in samples]
+    def score(shift):
+        errors = residuals(shift); bias = sum(errors)/len(errors)
+        return sum((v-bias)**2 for v in errors)
+    shift = min((ms/1000 for ms in range(-100, 101)), key=score)
+    errors = residuals(shift); bias = sum(errors)/len(errors)
+    expected = [30*math.sin((t+shift)*math.pi/4) for t,_ in samples]
+    backward = sum(abs(b-a) > .1 and (b-a)*(samples[i+1][1]-samples[i][1]) < 0
+                   for i,(a,b) in enumerate(zip(expected, expected[1:])))
+    return dict(time_shift_ms=shift*1000, bias_degrees=bias,
+                absolute_residual_degrees=stats([abs(v-bias) for v in errors]),
+                backward_steps=backward,
+                fit_at_search_boundary=abs(shift) == .1,
+                limits='Yaw metadata fit, not image motion. Fits constant time shift and bias; excludes near-stationary direction checks.')
+
+
 def analyze(metas, events):
     if len({m['run'] for m in metas}) != 1 or len({m['mode'] for m in metas}) != 1:
         raise ValueError('analyze one run and one mode at a time')
@@ -202,6 +227,7 @@ def analyze(metas, events):
     interrupted = any(not m.get('finished', True) for m in metas)
     return dict(run=metas[0]['run'], mode=mode, complete=not lost and not missing and not interrupted,
         interrupted=interrupted,
+        synthetic_layer_yaw=fit_layer_yaw(groups[5], epoch) if mode == 2 else None,
         lost=lost, missing_boundaries=missing, counts={NAMES[k]:len(v) for k,v in groups.items()},
         joins_missing=dict(misses), intervals_ms={k:stats(v) for k,v in intervals.items()},
         angular_step_degrees={k:stats(v) for k,v in angular.items()}, publication_age_ms=stats(ages),

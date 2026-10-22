@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from tools.motion.pixels import PREFIX, read_pixels, correlate
-from tools.motion.analyze import Event, HEADER, RECORD, analyze, angle, matrix_quat, read, synthetic
+from tools.motion.analyze import Event, HEADER, RECORD, analyze, angle, fit_layer_yaw, matrix_quat, read, synthetic
 
 EPOCH = 1_000_000_000
 META = dict(run=1, mode=2, start_ns=EPOCH, end_ns=EPOCH+30_000_000_000, dropped=0, unregistered=0)
@@ -71,6 +71,20 @@ class MotionTraceTests(unittest.TestCase):
         report = analyze([dict(META, finished=False)], [])
         self.assertTrue(report['interrupted'])
         self.assertFalse(report['complete'])
+
+    def test_layer_waveform_fit_detects_backward_step(self):
+        events = []
+        for i in range(100):
+            t = i/60
+            yaw = math.pi/6*math.sin((t-.002)*math.pi/4)
+            c, sn = math.cos(yaw), math.sin(yaw)
+            events.append(Event(EPOCH+round(t*1e9), i, 10, 5, 0,
+                                (c,0,sn,0, 0,1,0,0, -sn,0,c,0)))
+        fit = fit_layer_yaw(events, EPOCH)
+        self.assertEqual(fit['time_shift_ms'], -2)
+        self.assertEqual(fit['backward_steps'], 0)
+        events[50].v = events[40].v
+        self.assertGreater(fit_layer_yaw(events, EPOCH)['backward_steps'], 0)
 
     def test_pixels_roundtrip_truncation_and_capture_mismatch(self):
         header = HEADER.pack(b'DDPIXELS', 1, 36888, 1, EPOCH, EPOCH+30_000_000_000,

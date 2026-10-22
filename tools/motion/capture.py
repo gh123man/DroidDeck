@@ -38,6 +38,7 @@ def statuses():
 
 
 def arm(mode, trace, seconds, delay, pixels=False):
+    if pixels and not trace: raise ValueError('pixel capture requires --trace on')
     before = statuses(); time.sleep(.5); current = statuses()
     for process in ('android', 'driver'):
         if process not in current or current[process]['now_ns'] <= before.get(process, {}).get('now_ns', 0):
