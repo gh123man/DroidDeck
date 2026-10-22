@@ -46,15 +46,22 @@ def correlate(meta, frames, traces):
                 layers[e.id] = e
     rows = []
     previous = None
-    for f in frames:
+    seen = {}
+    for index, f in enumerate(frames):
         layer = layers.get(f['frame'])
         digest = hashlib.sha256(f['rgba']).hexdigest()
+        old = seen.get(digest)
         rows.append(dict(ns=f['ns'], seconds=(f['ns']-meta['start_ns'])*1e-9,
                          frame=f['frame'], texture=f['texture'], sha256=digest,
                          repeats_previous=previous == digest,
+                         repeats_frame=old[1]['frame'] if old else None,
+                         repeat_distance=index-old[0] if old else None,
+                         repeat_age_ms=(f['ns']-old[1]['ns'])*1e-6 if old else None,
+                         repeat_same_texture=f['texture'] == old[1]['texture'] if old else None,
                          layer_match=layer is not None and layer.related == f['texture'],
                          layer_pose=list(layer.v) if layer else None))
         previous = digest
+        seen[digest] = index, f
     return dict(capture=meta, frames=rows,
                 limits='Pixel hashes identify equality only. Inspect actual image motion before diagnosing discontinuity.')
 
@@ -75,7 +82,8 @@ def main():
             rgb = bytes(v for j, v in enumerate(f['rgba']) if j % 4 != 3)
             (output/f'{i:04d}-{f["frame"]}.ppm').write_bytes(b'P6\n128 72\n255\n'+rgb)
     print(json.dumps(dict(meta, matched=sum(r['layer_match'] for r in report['frames']),
-                          repeated=sum(r['repeats_previous'] for r in report['frames'])), indent=2))
+                          adjacent_repeats=sum(r['repeats_previous'] for r in report['frames']),
+                          all_repeats=sum(r['repeats_frame'] is not None for r in report['frames'])), indent=2))
 
 
 if __name__ == '__main__':

@@ -141,3 +141,11 @@ scene animation, low resolution, and stationary intervals limit interpretation.
 Inspect image movement against the synthetic waveform before claiming the first
 failing boundary. A smooth source readback still leaves Android composition and
 physical presentation unverified.
+
+The pixel analyzer compares each SHA256 against **all earlier images**, reporting
+the previous matching Present ID, frame distance, age, and whether the texture
+handle is the same. Comparing adjacent frames alone misses a stale three-texture
+ring such as `A B C A B C`: every adjacent pair differs even while the image
+sequence moves backward. Repeats near stationary pose or an unchanged scene are
+not automatically errors; correlate them with changed submitted pose and the
+surrounding actual image sequence.

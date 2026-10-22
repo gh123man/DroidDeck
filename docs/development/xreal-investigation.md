@@ -554,3 +554,56 @@ source pixels in the driver's existing GPU copy, joined to SubmitLayer handles.
 Compare its added GPU cost with the pose-only run before interpreting results.
 Raw captures currently reside in `/tmp/droiddeck-motion/{live-1,sine-1,sine-off-1}`
 on the development Mac and are not committed to the repository.
+
+#### First measured image discontinuity: imported source-eye copy
+
+Source-pixel diagnostic APK
+`2ec89adba9b12d822865b109c7688b60b5e1aa66114efa20f0c74e7d5dc05429`
+was installed after its deployment record was pushed. Installed APK, Android
+library, and staged/mapped driver were verified. Final-source CI logs confirm
+35 Python checks and native regressions passed despite stale queued API status.
+The readback probe adds observation only; synchronization/filtering are unchanged.
+
+Run `1792680393015`: synthetic ±30° yaw/8 seconds, 25-second window, SBS60,
+SteamVR desktop/dashboard scene. Captured 1,391 actual 128×72 RGBA source-eye
+images with zero drops. 1,390 join to first-left SubmitLayer records; the initial
+image's layer call precedes the window. All repeated-image examples join exactly.
+The driver waveform is exact; render poses have zero backward steps, median
+waveform residual 0.00764°, maximum 0.26380°.
+
+**163 images repeat every RGBA byte of the image exactly three Present IDs
+earlier, always on the same texture handle.** There are no adjacent duplicates.
+116 repeats occur with more than 0.5° change in submitted yaw. Repeat age spans
+38.62–88.61 ms. This is exact content equality, not an optical-flow estimate.
+
+| Present ID | Submitted yaw | Pixel contents equal Present ID | Content age |
+|---|---:|---:|---:|
+| 4298 | 4.11310° | 4295 (yaw 2.53422°) | 53.38 ms |
+| 4299 | 4.50528° | 4296 (yaw 3.32822°) | 42.75 ms |
+| 4300 | 4.89782° | 4297 (yaw 3.72028°) | 41.23 ms |
+
+Frames 4295–4297 contain different images. Replaying that sequence at 4298–4300
+moves the image backward while the pose continues forward. The first such repeat
+is at 0.17833 seconds. The recorder uses one GPU capture image/readback buffer;
+the three-frame pattern follows reuse of the source texture set. SHA256 values,
+handles, all repeat pairs, and trace summaries are preserved in
+`xreal-source-pixel-results-2026-10-22.json`. Raw images remain local under
+`/tmp/droiddeck-motion/pixels-1`; they contain desktop UI and are not committed.
+
+This localizes the earliest **measured** discontinuity to the imported eye-image
+copy boundary, before Android composition/presentation. It does not yet distinguish
+an unwritten/newly selected texture, stale producer input, or external-memory
+visibility. The producer lease waits for already submitted work and freezes later
+submissions; it does not identify which generation of an eye image was written.
+Do not infer that a completed lease proves the expected texture generation exists.
+The next discriminating observation is a per-texture producer write/submission and
+completion generation correlated with these readback repeat IDs, not another
+sensor filter or Android semaphore adjustment.
+
+Limits: wearer confirmation for this particular pixel run is pending, and the
+exact content signature has been measured in one run. The probe adds GPU work.
+Copy-fence p50/p99 were 2.365/7.226 ms versus 2.718/6.504 ms in the earlier
+pose-only synthetic run; frame count fell from 1,438 to 1,391 across sessions.
+That comparison is not an isolated overhead measurement. Prior synthetic motion
+with all per-frame recording off still reproduced the visible symptom, but does
+not alone prove identical internal cause. Preserve these distinctions in the PR.

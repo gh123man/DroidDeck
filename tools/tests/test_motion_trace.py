@@ -105,6 +105,15 @@ class MotionTraceTests(unittest.TestCase):
                                           0, 0, 0, 2, 42, 65536, 0, b'driver', 0, 1, 0, 0))
             with self.assertRaises(ValueError): correlate(meta, frames, [trace])
 
+    def test_pixel_ring_stale_content_is_not_hidden_by_adjacent_check(self):
+        frames = [dict(ns=EPOCH+i*16_000_000, frame=100+i, texture=i%3,
+                       rgba=bytes([i%3])) for i in range(6)]
+        rows = correlate(META, frames, [])['frames']
+        self.assertFalse(any(r['repeats_previous'] for r in rows))
+        self.assertEqual([r['repeats_frame'] for r in rows[3:]], [100,101,102])
+        self.assertTrue(all(r['repeat_distance'] == 3 and r['repeat_same_texture'] for r in rows[3:]))
+        self.assertTrue(all(r['repeat_age_ms'] == 48 for r in rows[3:]))
+
     def test_binary_roundtrip_and_truncation(self):
         e = driver(1, EPOCH+1_000_000)
         header = HEADER.pack(b'DDMOTION', 1, 128, 1, EPOCH, EPOCH+30_000_000_000,
