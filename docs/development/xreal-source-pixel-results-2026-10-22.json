@@ -2341,10 +2341,10 @@
     "motion-1792680393015-android-30069-2.bin": "f7d20cb1eb1fa86816130e8be293fd3e4e0bedf8632f2ab0959d876074acba27",
     "motion-1792680393015-android-30069-3.bin": "b7c008fd1651643fe87c4e4f3a808b2a7328b0416e4012bb15d49c0be04a35fd"
   },
-  "wearer_report": "pending",
+  "wearer_report": "abrupt snaps confirmed",
   "finding": "Actual imported left-eye readback reuses a byte-identical image from the preceding use of the same texture, three Present IDs earlier, while submitted HMD yaw advances. This occurs before Android presentation.",
   "limitations": [
-    "One instrumented image capture; repeatability and wearer report for this capture pending.",
+    "One instrumented image capture; repeatability pending; wearer confirmed snapping.",
     "Readback follows the normal eye copy in the same submission. It localizes stale imagery at the imported-source copy boundary but does not identify whether producer scheduling, producer writes, or external-memory visibility causes it.",
     "The probe adds GPU work. Relative to an earlier session the frame count fell from 1438 to 1391; this is not an isolated overhead measurement.",
     "One first-frame layer join lies outside the capture window. All repeated frames have matching submitted layers.",

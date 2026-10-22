@@ -600,7 +600,7 @@ The next discriminating observation is a per-texture producer write/submission a
 completion generation correlated with these readback repeat IDs, not another
 sensor filter or Android semaphore adjustment.
 
-Limits: wearer confirmation for this particular pixel run is pending, and the
+Limits: the wearer confirmed abrupt snaps during this pixel run, and the
 exact content signature has been measured in one run. The probe adds GPU work.
 Copy-fence p50/p99 were 2.365/7.226 ms versus 2.718/6.504 ms in the earlier
 pose-only synthetic run; frame count fell from 1,438 to 1,391 across sessions.

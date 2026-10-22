@@ -32,6 +32,7 @@ typedef unsigned long VisualID;
 #include <optional>
 #include <string>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <thread>
 #include <unistd.h>
@@ -111,6 +112,7 @@ struct Imported {
     uint32_t width = 0, height = 0;
     uint32_t producerPid = 0;
     VkFormat format = VK_FORMAT_UNDEFINED;
+    uint64_t inode = 0, device = 0;
 };
 
 struct PendingImport {
@@ -130,6 +132,7 @@ public:
     bool Acquired() const { return acquired_; }
     void BeginGpu() { gpuComplete_ = false; }
     void EndGpu() { gpuComplete_ = true; }
+    uint64_t Ticket() const { return lease_.ticket; }
     bool Release() { return gpuComplete_ && droiddeck_producer_release(&lease_); }
 private:
     droiddeck_producer_lease lease_{-1, 0};
@@ -636,6 +639,8 @@ private:
         im.height = p.height;
         im.producerPid = p.producerPid;
         im.format = (VkFormat)p.format;
+        struct stat identity{};
+        if (fstat(p.fd, &identity) == 0) { im.inode = identity.st_ino; im.device = identity.st_dev; }
         // Dedicated OPAQUE_FD imports must match SteamVR's exported image description.
         SharedEyeImage description(im.format, p.width, p.height);
         VkResult r = vk_.CreateImage(dev_, &description.info, nullptr, &im.image);
@@ -881,6 +886,8 @@ private:
             if (!lease->Acquired()) { leaseMisses_++; return false; }
         }
         if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
+        double identity[] = {(double)eye[0]->device, (double)(lease ? lease->Ticket() : 0), (double)eye[0]->producerPid};
+        dd_motion_emit(DD_MOTION_TEXTURE, 0, f.render.frame_id, eye[0]->inode, identity, 3);
         const bool motionReady = PrepareMotionPixels();
         const bool motionRecord = dd_motion_pixels_recording();
         if (motionRecord && !motionReady) dd_motion_pixels_emit(f.render.frame_id, f.texture[0], nullptr);

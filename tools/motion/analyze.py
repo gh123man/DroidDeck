@@ -12,7 +12,8 @@ import struct
 HEADER = struct.Struct('<8sIIQqqQQIIIIQ16s4Q')
 RECORD = struct.Struct('<qQQII12d')
 NAMES = {1: 'sensor', 2: 'publish', 3: 'driver', 4: 'sent', 5: 'layer', 6: 'present',
-         7: 'copy', 8: 'vsync', 9: 'throttle', 10: 'recenter', 11: 'android', 12: 'commit'}
+         7: 'copy', 8: 'vsync', 9: 'throttle', 10: 'recenter', 11: 'android', 12: 'commit',
+         13: 'producer_write', 14: 'producer_lease', 15: 'texture_identity'}
 
 @dataclass
 class Event:

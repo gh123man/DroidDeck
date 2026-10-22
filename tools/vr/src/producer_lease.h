@@ -122,6 +122,7 @@ struct droiddeck_producer_server {
     pthread_t thread;
     int (*acquire)(int64_t deadline);
     void (*release)(void);
+    void (*diagnostic_ready)(uint64_t);
     void (*quarantine)(void);
     char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
 };
@@ -144,6 +145,7 @@ static void *droiddeck_producer_serve(void *argument) {
             continue;
         }
         uint64_t granted = ++ticket;
+        if (server->diagnostic_ready) server->diagnostic_ready(granted);
         message = (struct droiddeck_producer_message){DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_READY, granted};
         if (!droiddeck_producer_io(connection, &message, 1, droiddeck_producer_now() + 100000000LL)) {
             server->release();

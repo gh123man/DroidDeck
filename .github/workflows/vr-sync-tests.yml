@@ -56,13 +56,13 @@ jobs:
           cc -O2 -Itools/vr/third_party/wayland -c app/src/main/cpp/waylandcomp/generated/xdg-shell-protocol.c -o /tmp/vr-sync-tests/xdg.o
           for test in presenter_completion presenter_lease; do
             c++ -std=c++17 -O2 -pthread -Itools/vr/third_party/wayland -Iapp/src/main/cpp/waylandcomp/generated \
-              tools/vr/tests/test_${test}.cpp /tmp/vr-sync-tests/wayland.o /tmp/vr-sync-tests/xdg.o -ldl -o /tmp/vr-sync-tests/$test
+              tools/vr/tests/test_${test}.cpp /tmp/vr-sync-tests/wayland.o /tmp/vr-sync-tests/xdg.o -ldl -lm -o /tmp/vr-sync-tests/$test
             /tmp/vr-sync-tests/$test
           done
           cc -std=c11 -O2 -Wall -Wextra -Werror -pthread tools/vr/tests/test_motion_trace.c -lm -o /tmp/vr-sync-tests/motion_trace
           /tmp/vr-sync-tests/motion_trace
-          for test in fence_tracker compositor_submit semaphore_layer; do
-            cc -std=c11 -O2 -pthread -Itools/vr/src tools/vr/tests/test_${test}.c -ldl -o /tmp/vr-sync-tests/$test
+          for test in fence_tracker compositor_submit semaphore_layer producer_motion; do
+            cc -std=c11 -O2 -pthread -Itools/vr/src tools/vr/tests/test_${test}.c -ldl -lm -o /tmp/vr-sync-tests/$test
             /tmp/vr-sync-tests/$test
           done
   android-compositor:

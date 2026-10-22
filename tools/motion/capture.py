@@ -28,7 +28,7 @@ def shell(*args, data=None):
 def statuses():
     result = {}
     for name in shell('ls', ROOT).decode().splitlines():
-        if not re.fullmatch(r'motion-(android|driver)-\d+\.status', name): continue
+        if not re.fullmatch(r'motion-(android|driver|producer)-\d+\.status', name): continue
         text = shell('cat', f'{ROOT}/{name}').decode()
         values = {k: int(v) for k, v in re.findall(r'(\w+)=(-?\d+)', text)}
         process = name.split('-')[1]
@@ -37,10 +37,11 @@ def statuses():
     return result
 
 
-def arm(mode, trace, seconds, delay, pixels=False):
+def arm(mode, trace, seconds, delay, pixels=False, producer=False):
     if pixels and not trace: raise ValueError('pixel capture requires --trace on')
+    required = ('android','driver','producer') if producer else ('android','driver')
     before = statuses(); time.sleep(.5); current = statuses()
-    for process in ('android', 'driver'):
+    for process in required:
         if process not in current or current[process]['now_ns'] <= before.get(process, {}).get('now_ns', 0):
             raise RuntimeError(f'{process} diagnostic controller is absent or not advancing')
         if current[process]['active']:
@@ -56,27 +57,29 @@ def arm(mode, trace, seconds, delay, pixels=False):
     shell('sh', '-c', f'cat > {ROOT}/motion-control.tmp && mv {ROOT}/motion-control.tmp {ROOT}/motion-control', data=command)
     for _ in range(20):
         time.sleep(.2); current = statuses()
-        if all(current.get(p, {}).get('run') == run for p in ('android','driver')):
-            return dict(run=run, mode=mode, trace=trace, pixels=pixels, start_ns=epoch,
+        if all(current.get(p, {}).get('run') == run for p in required):
+            return dict(run=run, mode=mode, trace=trace, pixels=pixels, producer=producer, start_ns=epoch,
                         duration_seconds=seconds, return_to_live='automatic after capture', controllers=current)
     raise RuntimeError(f'run {run} was not acknowledged by both controllers; inspect status before testing')
 
 
 def collect(run, output):
     current = statuses()
-    if not all(current.get(p, {}).get('run') == run and current[p]['exported'] == 1 for p in ('android','driver')):
+    required = ['android','driver']
+    if current.get('producer',{}).get('run') == run: required.append('producer')
+    if not all(current.get(p, {}).get('run') == run and current[p]['exported'] == 1 for p in required):
         raise RuntimeError('both controllers must report this run exported successfully before collection')
     output.mkdir(parents=True, exist_ok=True)
     files = []
     for name in shell('ls', ROOT).decode().splitlines():
-        if not re.fullmatch(rf'motion-{run}-(android|driver)-\d+-\d+\.bin', name): continue
+        if not re.fullmatch(rf'motion-{run}-(android|driver|producer)-\d+-\d+\.bin', name): continue
         content = shell('cat', f'{ROOT}/{name}')
         (output/name).write_bytes(content); files.append(name)
     for name in shell('ls', ROOT).decode().splitlines():
         if re.fullmatch(rf'motion-{run}-driver-\d+\.pixels', name):
             (output/name).write_bytes(shell('cat', f'{ROOT}/{name}'))
     (output/'controllers.json').write_text(json.dumps(current, indent=2)+'\n')
-    if len(files) != 16: raise RuntimeError(f'expected 16 streams (including empty streams), got {len(files)}')
+    if len(files) != 8*len(required): raise RuntimeError(f'expected {8*len(required)} streams (including empty streams), got {len(files)}')
     return dict(run=run, output=str(output.resolve()), files=files)
 
 
@@ -91,6 +94,7 @@ def main():
     a.add_argument('--trace', choices=('on','off'), default='on')
     a.add_argument('--seconds', type=float, default=25)
     a.add_argument('--delay', type=float, default=10)
+    a.add_argument('--producer', action='store_true', help='Require the producer write/completion recorder')
     a.add_argument('--pixels', action='store_true', help='Also capture actual left-eye pixels at the source-copy boundary')
     c = commands.add_parser('collect'); c.add_argument('run', type=int); c.add_argument('output', type=Path)
     args = parser.parse_args()
@@ -104,7 +108,7 @@ def main():
     elif args.command == 'status': result = statuses()
     elif args.command == 'arm':
         if not .1 <= args.seconds <= 30 or not 3 <= args.delay <= 120: parser.error('seconds must be 0.1–30; delay 3–120')
-        result = arm(('live','fixed','sine').index(args.mode), args.trace == 'on', args.seconds, args.delay, args.pixels)
+        result = arm(('live','fixed','sine').index(args.mode), args.trace == 'on', args.seconds, args.delay, args.pixels, args.producer)
     else: result = collect(args.run, args.output)
     print(json.dumps(result, indent=2))
 

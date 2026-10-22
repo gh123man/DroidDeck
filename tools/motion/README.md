@@ -149,3 +149,35 @@ ring such as `A B C A B C`: every adjacent pair differs even while the image
 sequence moves backward. Repeats near stationary pose or an unchanged scene are
 not automatically errors; correlate them with changed submitted pose and the
 surrounding actual image sequence.
+
+## Producer command/completion probe
+
+`--producer` requires a third recorder in vrcompositor. Enable diagnostics before
+restarting SteamVR so the Vulkan layer observes imported memory bindings, image
+views, render passes/framebuffers, command recording, and submissions from startup.
+The driver records the imported FD's device/inode and the existing producer lease
+ticket for each copied frame. Producer events use the same FD identity.
+
+- Event 13 (`producer_write`): id is submission-call serial, related is FD inode;
+  flags 0 before entering the existing submission lock, 1 after successful queue
+  submission, 2 after failure. Values: FD device, VkImage, command buffer, queue,
+  write-command kind mask/count, cumulative coverage gaps.
+- Event 14 (`producer_lease`): id is the protocol's actual granted lease ticket.
+  Flags 0 is coverage health (value 0: gaps). Flags 1 is a shared-memory snapshot:
+  related inode; values device, last successful write submission serial, kind mask,
+  coverage gaps, and host time of that successful submission observation. This
+  runs after the existing per-queue fence waits and before replying READY.
+- Event 15 (`texture_identity`): id is Present ID, related inode; values device,
+  actual lease ticket, producer PID. This runs after lease acquisition.
+
+The probe does not insert GPU commands, fences, waits, barriers, or writes into
+images. It records render-pass color attachments with draw/load-clear commands,
+dynamic color attachments, and explicit image clear/copy/blit/resolve commands.
+Bounded metadata uses a nonblocking try-lock; contention, table capacity limits,
+and unresolved inherited secondary rendering count as coverage gaps. Any gaps
+make exclusion claims inconclusive. Shader/storage writes, extension draw paths,
+and unusual image aliasing need separate coverage before drawing conclusions.
+A submitted drawing command proves queued work, not changed image bytes: clipping,
+reused source content, or a zero indirect draw count can still leave pixels equal.
+If a newer completed producer command accompanies a stale image, producer-side
+pixel verification is still needed before blaming external-memory visibility.
