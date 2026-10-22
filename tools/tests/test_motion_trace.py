@@ -127,6 +127,11 @@ class MotionTraceTests(unittest.TestCase):
                 event(37,11,0,14,0,[0]),event(37,11,99,14,1,[8,5,8,0,6])]
         result=correlate_producer(pixels,[meta],events)
         self.assertEqual(result['counts']['repeat_without_new_completed_commands'],1)
+        timeline=events+[event(39,4,0,7,7,[0]),event(38,6,99,13,0,[8,42,100,1,8,1,0]),
+                         event(41,6,99,13,1,[8,42,100,1,8,1,0])]
+        row=correlate_producer(pixels,[meta],timeline)['repeated_frames'][0]
+        self.assertTrue(row['next_write_after_copy'])
+        self.assertEqual(row['next_write_attempt_ns'],EPOCH+38)
         events[-1]=event(37,11,99,14,1,[8,6,8,0,35])
         self.assertEqual(correlate_producer(pixels,[meta],events)['counts']['repeat_despite_new_completed_commands'],1)
         events[-1]=event(37,11,99,14,1,[8,6,8,1,35])

@@ -17,9 +17,10 @@ def correlate_producer(pixel_report, metas, events):
             raise ValueError('producer/pixel run or window mismatch')
     producers={m['pid'] for m in metas if m['process']=='producer'}
     complete=bool(producers) and all(m.get('finished') and not m['dropped'] and not m['unregistered'] for m in metas)
-    identities={};leases={};health={};writes=[];summaries=[]
+    identities={};leases={};health={};writes=[];summaries=[];copy_done={}
     for e in events:
-        if e.kind==15: identities[e.id]=e
+        if e.kind==7 and e.flags==7 and e.v[0]==0:copy_done[e.id]=e
+        elif e.kind==15: identities[e.id]=e
         elif e.kind==14 and e.flags==0: health[e.id]=e
         elif e.kind==14 and e.flags==1:
             key=(e.id,e.related,int(e.v[0]))
@@ -63,9 +64,20 @@ def correlate_producer(pixel_report, metas, events):
                             row['classification']='repeat_without_new_completed_commands'
                     else:row['classification']='changed_pixels' if p['repeats_frame'] is None else 'other_repeat'
                 prior_by_identity[key]=(p,serial,health[ticket]) if valid else None
+        if row['classification']=='repeat_without_new_completed_commands':
+            done=copy_done.get(p['frame']);h=health[row['lease']]
+            later=[e for e in writes if e.flags==1 and e.related==row['inode'] and int(e.v[0])==row['device'] and e.ns>h.ns]
+            following=min(later,key=lambda e:e.ns) if later else None
+            if done and following:
+                attempts=[e for e in writes if e.flags==0 and e.id==following.id and e.related==following.related and int(e.v[0])==row['device']]
+                attempt=min(attempts,key=lambda e:e.ns) if attempts else None
+                row.update(lease_ready_ns=h.ns,copy_complete_ns=done.ns,next_write_serial=following.id,
+                           next_write_return_ns=following.ns,next_write_attempt_ns=attempt.ns if attempt else None,
+                           next_write_after_copy=following.ns>done.ns)
         rows.append(row)
     return dict(run=capture['run'],producer_present=bool(producers),capture_complete=complete,
         coverage_gaps=max((e.v[0] for e in health.values()),default=None),counts=dict(Counter(r['classification'] for r in rows)),
+        covered_changed_without_new_write=sum(r['classification']=='changed_pixels' and not r['new_completed_write'] for r in rows),
         repeated_frames=[r for r in rows if r['repeats_frame'] is not None],
         limits=['Queued draw commands do not guarantee changed pixels; same producer input or clipping remains possible.',
                 'A new completed write with identical imported pixels needs producer-side pixel verification before blaming the importer.',

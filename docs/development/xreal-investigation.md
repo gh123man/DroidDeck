@@ -649,3 +649,66 @@ arrived while the lease prevented their submission; it does not exclude other
 unrecorded writes. The old recorder still marks every interval inconclusive.
 Hashes, observed timelines, and explicit limitations are saved in
 `xreal-producer-results-2026-10-22.json`; raw captures remain local.
+
+
+### Covered producer intervals: the copy precedes the next texture write
+
+Source `15fb4ec7ae74ef0a9cdd48110da7d0b501cb2a2d`, pinned in
+`deployments/2026-10-22-xreal-producer-coverage.json`, passed Linux/native and
+Android CI run 39806904556. Installed APK SHA256
+`09195fb27dd7bf5e6d047998561fc8cd383173d94bcd491f9a4472e3aa68546a`
+and staged layer/driver hashes match. Only the Vulkan-layer asset changed.
+No GPU synchronization or rendering behavior was changed.
+
+Synthetic run **1792684243897** captured 1,313 source images, all 24 event streams,
+and zero dropped/unregistered records. The wearer confirmed snapping. There
+were 178 exact older-image replays, no adjacent duplicates, and zero lost object
+mappings. Of 1,312 submitted command buffers, 1,095 have complete recording
+coverage; 217 do not. The analyzer rejects every affected texture interval,
+retaining **119 fully covered replay events** and 906 changed-image intervals.
+The other 59 replay events remain inconclusive.
+
+In **all 119 covered replay events**, the completed producer write serial is
+unchanged since the preceding use of that FD. The next draw to the same texture
+is submitted only **after the driver's GPU-copy completion event**. In 71 cases
+its attempt was observed before lease READY; in 34 it arrived between READY and
+copy completion. The other 14 lack the attempt event, but retain the successful
+submission event after the copy. All observed writes to the eye images are draw
+commands. The eye-image creation contract has color-attachment and transfer
+usage, without storage-image usage. There are **zero** covered old-image replays
+after a new completed write, and **zero** covered changed-image intervals without
+a new completed write. Eighty-four covered replays occur despite more than 0.5°
+change in submitted yaw.
+
+For example, frame 7076 repeats frame 7073 byte-for-byte, 60.62 ms later, despite
+1.548° of submitted yaw advance. Both lease snapshots identify FD inode 17643,
+device 9, last write serial 7096. The next write (7099) is attempted at
+80388305621988 ns. Lease READY follows at 80388305808654 ns; the driver's GPU copy
+finishes at 80388309493602 ns; write 7099 returns successfully only at
+80388309869279 ns. The existing submission lock is held throughout READY/copy,
+so this is work that has not entered the producer queue before the copy, rather
+than a new write that has finished but remains invisible to the importer.
+
+This identifies an early-copy / texture-generation handoff failure for these
+replays: the lease drains already submitted work, then freezes submission before
+the next write to the selected texture has occurred. Waiting for the importer
+copy to finish cannot make that texture current. A future fix needs to identify
+and wait for the required producer generation **before** retaining the lease,
+then prove that the stale-image sequence disappears with the same probe.
+`Present(sync)` currently records but does not wait on its sync handle; whether
+that handle can provide the required generation ordering needs investigation.
+No synchronization change is included in this step.
+
+There is also one separate submitted-pose backward step at frame 7474 (7.665 s):
+yaw moves from -8.296° to -9.578° and then resumes its forward sweep. That frame
+is not one of the 119 covered pixel replays. Synthetic driver poses remain exact;
+all layer matrices are valid, but this run must not be described as entirely
+smooth at the layer-metadata boundary. It does not explain the repeated texture
+pattern and remains an additional issue to investigate.
+
+Full classification, exact timelines, capture hashes, and limitations are in
+`xreal-producer-coverage-results-2026-10-22.json`. Raw data remains local under
+`/tmp/droiddeck-motion/producer-v2`. The result rules in early copying for these
+events; it does not prove that no independent importer bug exists. Instrumentation
+has overhead, and unsupported extension writes/unusual memory aliases are outside
+the monitored path. The automatic sweep ended and tracking returned to live.
