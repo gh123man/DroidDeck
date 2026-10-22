@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-22",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "purpose": "Locate the first motion discontinuity with correlated binary traces and fixed/sinusoidal driver input; no synchronization or filtering changes",
+  "source_commit": "0d20c7064bc4b57bc6766160bfa81ffaef8375eb",
+  "apk_sha256": "d5f182aa3bef6eb104a78247e85ddaf77e4cfd567b3b9f8aa0482832e2b5eef7",
+  "base_apk_sha256": "00586ad1e88526d73f818caf71d9277a6397552a7849fc4e634248036c5b6b7a",
+  "compositor_sha256": "9ffc33ebe5abcbf062f73467f949c02461123932837bed9c30c81a734a535c69",
+  "driver_sha256": "28e81d15cf3a40137793240eccfd60589cbe5cd9847e0ce665f6906fb315f325",
+  "changed_assets": [
+    "assets/linuxfs/usr/local/lib/droiddeck-vr/droiddeck/bin/linuxarm64/driver_droiddeck.so",
+    "classes12.dex",
+    "classes5.dex",
+    "lib/arm64-v8a/libdroiddeckwayland.so"
+  ],
+  "signer_sha256": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+  "ci_url": "https://github.com/gh123man/DroidDeck/actions/runs/39791775756",
+  "build_method": "Android compositor built in CI with NDK r27d, API 29, Debug, full frame-generation engines, unrelated Quest bridge disabled. Driver cross-compiled with Zig 0.13.0, aarch64-linux-gnu.2.31, C++17 -O2. Debug sections stripped. Kotlin 2.1.0, module app_debug, JVM 17 compiled XrealLink, MotionDiagnostics and HeadTracker against repository dependencies; only those three class families and D8-generated family members replaced in donor DEX. Compile-only Glasses/SpatialTracking/resolution stubs excluded from overlay. Build-tools 35 aligned and signed with repository test key.",
+  "pre_install_validation": [
+    "CI native compilation and synchronization regression suite passed, including bounded recorder concurrent/export/rearm/overflow/interrupt tests and 11 analyzer fault-injection checks.",
+    "28 XREAL filter, protocol and model JVM tests passed.",
+    "APK payload comparison permits exactly two DEX files, compositor library, and driver asset; no other payload changed. Signer and alignment verified."
+  ],
+  "limitations": [
+    "Not a full Gradle APK build; donor app version label inherited.",
+    "Hardware evidence pending deployment. CPU frame IDs do not establish source pixel freshness or optical output.",
+    "Host recorder microbenchmark is not a Retroid overhead measurement; matched on/off capture still required."
+  ]
+}
