@@ -28,7 +28,11 @@
     "reported_build": "remote clean \u00b7 codex/xreal-one-device-support at 0d38eb1",
     "reported_version": "0.6.0",
     "runtime": "r9 already installed",
-    "glasses": "Android reports present=false and connected=false; connection/SBS/SteamVR verification awaits physical reconnection."
+    "glasses": "XREAL One detected with USB permission granted and no communication error; native display mode 9 accepted.",
+    "stereo": "Successfully switched to device mode 5, 3840x1080 at 60 Hz; switching completed and tracking active.",
+    "steamvr": "Session 2026-10-22-08-steam reached READY with firstFrame=true, steamVr=true, vrActive=true, and no session failure.",
+    "user_confirmation": "User confirmed the VR image and head movement look good on this build.",
+    "log_export": "Full session artifact export unavailable because Android denied access to the release package private log directory; validation used supported app status commands and user observation."
   },
   "scope": "Minimal device support only. No diagnostic, rendering, synchronization, or optimization changes from the investigation PR."
 }
