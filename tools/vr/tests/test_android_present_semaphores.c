@@ -1,7 +1,3 @@
-#include "../../../app/src/main/cpp/waylandcomp/src/motion_trace.h"
-void dd_motion_emit(uint32_t event, uint32_t flags, uint64_t id, uint64_t related,
-                    const double *values, unsigned count) {}
-static const uint64_t motion_id = 1;
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>

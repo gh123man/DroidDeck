@@ -216,7 +216,7 @@ class SteamVrHelperTest(unittest.TestCase):
                 self.environment['DROIDDECK_VR_PRESENT'] = mode
                 self.assertIn(f'present={mode} lease=1', self.lease_log())
 
-    def test_flat_diagnostic_override_is_preserved(self):
+    def test_flat_explicit_override_is_preserved(self):
         self.environment['DROIDDECK_VR_PRODUCER_LEASE'] = '0'
         self.assertIn('present=unset lease=0', self.lease_log())
 

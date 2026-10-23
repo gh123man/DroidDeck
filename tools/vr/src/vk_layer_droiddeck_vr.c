@@ -19,7 +19,7 @@
 
 #define LAYER_NAME "VK_LAYER_DROIDDECK_vr"
 #define EXPORT __attribute__((visibility("default")))
-#include "producer_motion.h"
+#include "producer_writes.h"
 
 static void say(const char *fmt, const char *arg) {
     if (getenv("DROIDDECK_VR_LAYER_QUIET")) return;
@@ -213,7 +213,7 @@ static VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *ci, const 
         }
     }
     pthread_mutex_unlock(&g_lock);
-    if (!strcmp(program_invocation_short_name,"vrcompositor")) pm_start();
+    if (!strcmp(program_invocation_short_name,"vrcompositor")) pw_start();
     return VK_SUCCESS;
 }
 
@@ -627,7 +627,7 @@ static int producer_acquire_targets(int64_t deadline, const struct droiddeck_pro
     for (;;) {
         if (droiddeck_producer_now() >= deadline) return 0;
         if (pthread_mutex_trylock(&g_submission_lock) == 0) {
-            int ready=targets ? pm_targets_ready(targets) : 1;
+            int ready=targets ? pw_targets_ready(targets) : 1;
             if (ready>0) break;
             pthread_mutex_unlock(&g_submission_lock);
             if (ready<0) return 0;
@@ -690,8 +690,7 @@ static void producer_record(struct dev *device, VkQueue queue) {
         g_producer_retry_at = droiddeck_producer_now() + 1000000000LL;
         g_producer_server.acquire = producer_acquire;
         g_producer_server.acquire_targets = producer_acquire_targets;
-        g_producer_server.reserve = pm_reserve;
-        g_producer_server.diagnostic_ready = pm_ready;
+        g_producer_server.reserve = pw_reserve;
         g_producer_server.release = producer_release;
         g_producer_server.quarantine = producer_quarantine;
         if (droiddeck_producer_start(&g_producer_server)) {
@@ -1226,16 +1225,13 @@ static VkResult VKAPI_CALL QueueSubmit(VkQueue q, uint32_t count, const VkSubmit
             }
         }
     }
-    uint64_t motion_serial=pm_enabled?__atomic_add_fetch(&pm_serial,1,__ATOMIC_RELAXED):0;
-    for(uint32_t i=0;motion_serial && i<count;i++)
-        for(uint32_t j=0;j<submits[i].commandBufferCount;j++)
-            pm_submitted(motion_serial,q,submits[i].pCommandBuffers[j],0);
+    uint64_t write_serial=pw_enabled?__atomic_add_fetch(&pw_serial,1,__ATOMIC_RELAXED):0;
     struct dev *device = dev_for(q);
     if (device->producer) { pthread_mutex_lock(&g_submission_lock); producer_record(device, q); }
     VkResult result = submit_tracked(next, q, count, any ? copy : submits, fence);
-    for(uint32_t i=0;motion_serial && i<count;i++)
+    for(uint32_t i=0;result==VK_SUCCESS && write_serial && i<count;i++)
         for(uint32_t j=0;j<submits[i].commandBufferCount;j++)
-            pm_submitted(motion_serial,q,submits[i].pCommandBuffers[j],result==VK_SUCCESS?1:2);
+            pw_submitted(write_serial,submits[i].pCommandBuffers[j]);
     if (device->producer) pthread_mutex_unlock(&g_submission_lock);
     note_submit_signals(count, submits);
     if (any) {
@@ -1281,16 +1277,13 @@ static VkResult VKAPI_CALL QueueSubmit2(VkQueue q, uint32_t count, const VkSubmi
             copy[i].pWaitSemaphoreInfos = waits[i];
         }
     }
-    uint64_t motion_serial=pm_enabled?__atomic_add_fetch(&pm_serial,1,__ATOMIC_RELAXED):0;
-    for(uint32_t i=0;motion_serial && i<count;i++)
-        for(uint32_t j=0;j<submits[i].commandBufferInfoCount;j++)
-            pm_submitted(motion_serial,q,submits[i].pCommandBufferInfos[j].commandBuffer,0);
+    uint64_t write_serial=pw_enabled?__atomic_add_fetch(&pw_serial,1,__ATOMIC_RELAXED):0;
     struct dev *device = dev_for(q);
     if (device->producer) { pthread_mutex_lock(&g_submission_lock); producer_record(device, q); }
     VkResult result = submit2_tracked(next, q, count, any ? copy : submits, fence);
-    for(uint32_t i=0;motion_serial && i<count;i++)
+    for(uint32_t i=0;result==VK_SUCCESS && write_serial && i<count;i++)
         for(uint32_t j=0;j<submits[i].commandBufferInfoCount;j++)
-            pm_submitted(motion_serial,q,submits[i].pCommandBufferInfos[j].commandBuffer,result==VK_SUCCESS?1:2);
+            pw_submitted(write_serial,submits[i].pCommandBufferInfos[j].commandBuffer);
     if (device->producer) pthread_mutex_unlock(&g_submission_lock);
     note_submit2_signals(count, submits);
     if (any) {
@@ -1414,11 +1407,11 @@ static VkResult VKAPI_CALL CreateImage(VkDevice d, const VkImageCreateInfo *ci, 
     return r;
 }
 
-#include "producer_motion_hooks.h"
+#include "producer_write_hooks.h"
 
 static PFN_vkVoidFunction semaphore_hook(const char *name) {
-    PFN_vkVoidFunction diagnostic=pm_hook(name);
-    if(diagnostic) return diagnostic;
+    PFN_vkVoidFunction write_hook=pw_hook(name);
+    if(write_hook) return write_hook;
     HOOK_AS("vkCreateImage", CreateImage)
     HOOK_AS("vkCreateSemaphore", CreateSemaphore)
     HOOK_AS("vkDestroySemaphore", DestroySemaphore)

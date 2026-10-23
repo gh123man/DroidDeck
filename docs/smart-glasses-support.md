@@ -1,6 +1,6 @@
 # Smart-glasses support
 
-This describes the integrations implemented in DroidDeck as of 2026-10-21. A recognized product name alone does not establish that every firmware, phone, cable, or adapter supports every mode. Controls become available from the connected device's capabilities and the display modes Android actually exposes.
+This describes the integrations implemented in DroidDeck as of 2026-10-22. A recognized product name alone does not establish that every firmware, phone, cable, or adapter supports every mode. Controls become available from the connected device's capabilities and the display modes Android actually exposes.
 
 **3DoF** tracks head rotation: turn, tilt, and roll around a virtual screen. **6DoF** also tracks head position, so leaning or moving changes the view. Both apply to DroidDeck menus, non-Steam launchers, desktop sessions, and games when the tracked virtual screen is enabled. Direct SteamVR rendering uses the corresponding headset pose instead of the virtual-screen layout.
 
@@ -23,11 +23,11 @@ This describes the integrations implemented in DroidDeck as of 2026-10-21. A rec
 | Recognized RayNeo / TCL Air-series devices | Integrated RayNeo USB transport | Yes, with orientation calibration controls | No | No |
 | RayNeo GT-series devices matching the supported USB identity, including GT Max identification | Integrated GT USB/IMU path | Yes, with orientation calibration controls | No | No |
 | **XREAL 1S** | **Experimental**; exact USB identity plus the device's USB-Ethernet control/IMU connection | Yes, when that connection is ready | No | No |
-| **XREAL One** | **Experimental, initial One / Retroid Pocket 6 validation**; exact normal USB identity plus USB-Ethernet | VR image and head tracking confirmed; stutter reported, drift/stability still unverified | No | No |
+| **XREAL One** | **Experimental**; exact USB identity plus the device's USB-Ethernet control/IMU connection; verified on Retroid Pocket 6 | Yes, when that connection is ready | No | No |
 | Rokid Max; Rokid Air under the same USB identity | Integrated Rokid USB transport (vendor control requests and HID IMU reports) | Yes | No | No |
 | Other XREAL models; unrecognized glasses; display adapters and docks | Display-only where Android exposes a usable display; automatic glasses routing also requires display recognition | No supported app tracking connection | No | No |
 
-RayNeo's Air-series recognition uses its known USB identity or a RayNeo/TCL Air name under the accepted vendor IDs; it is not a per-model certification list. The GT vendor path requires the specific supported product ID. Rokid recognition requires USB 04d2:162f plus a Rokid product name, since that vendor ID is shared with unrelated devices; it was verified on a Rokid Max, and the Air follows the same published protocol untested. XREAL support targets **1S and One** through separate model profiles. One has initial connection, display-switching, and wearer VR validation on a Retroid Pocket 6; smooth tracking and sustained sessions remain unverified. One Pro, Air-family devices, and recovery-mode products remain excluded. VITURE Pro 2 is identified through SDK validation rather than a guessed product ID. A dock does not supply the connected glasses' sensors by itself.
+RayNeo's Air-series recognition uses its known USB identity or a RayNeo/TCL Air name under the accepted vendor IDs; it is not a per-model certification list. The GT vendor path requires the specific supported product ID. Rokid recognition requires USB 04d2:162f plus a Rokid product name, since that vendor ID is shared with unrelated devices; it was verified on a Rokid Max, and the Air follows the same published protocol untested. XREAL support targets **1S (3318:043e) and One (3318:0438)**: One Pro, Air-family devices, and recovery-mode products are not enabled by this transport. VITURE Pro 2 is identified through SDK validation rather than a guessed product ID. A dock does not supply the connected glasses' sensors by itself.
 
 The final column refers specifically to Luma Ultra's stereo tracking cameras. DroidDeck's separate phone-camera and physical-controller features are independent of this matrix.
 
@@ -43,8 +43,8 @@ All display modes depend on the phone's video output, the cable/adapter, and And
 | VITURE Beast | 1080p or 1200p per eye; SDK handles native/bypass display modes | Brightness, volume, dimming toggle |
 | VITURE Pro 2 | 1080p per eye; 2D and SBS | Brightness and volume; no electrochromic-film control |
 | RayNeo Air/GT | 2D/SBS switching; resolution and refresh follow available Android modes | Orientation calibration; no app brightness, volume, or dimming commands |
-| XREAL One | Firmware-native 2D and SBS mode requests; refresh follows Android's advertised modes; physical display confirmation required | No app brightness, volume, or dimming controls until One-specific validation |
 | XREAL 1S | Supported 1S display-mode commands, including native 1200p/60 Hz and SBS | Brightness and dimming toggle; no app volume command |
+| XREAL One | Native 2D and SBS switching; 3840×1080 SBS at 60 Hz verified on Retroid Pocket 6; returning to 2D restores the firmware's native mode | No app brightness, volume, or dimming commands |
 | Rokid Max | 1080p at 60 or 120 Hz in 2D; SBS at 1080p/60, 1200p/60, or 1200p/90 | Brightness; volume follows Android's USB audio volume; no dimming film |
 | Rokid Air | 1080p/60 in 2D and SBS | Brightness; volume follows Android's USB audio volume |
 
@@ -83,19 +83,4 @@ If only a flat picture is available, check video output first, then the control 
 - [Agent diagnostics and capture commands](agent-control.md)
 - [RayNeo attribution and protocol references](third-party/rayneo/README.md)
 
-The capability definitions are maintained in [VITURE models](../app/src/main/java/com/droiddeck/launcher/glasses/VitureProtocol.kt), [RayNeo models](../app/src/main/java/com/droiddeck/launcher/glasses/RayNeoModel.kt), [XREAL profiles](../app/src/main/java/com/droiddeck/launcher/glasses/XrealModel.kt), [Rokid](../app/src/main/java/com/droiddeck/launcher/glasses/RokidModel.kt), and [connection capability routing](../app/src/main/java/com/droiddeck/launcher/glasses/Glasses.kt). Update this matrix when those integrations change.
-
-
-## XREAL One test build
-
-The One profile matches only normal USB `3318:0438` and uses the published 50° diagonal FOV. Returning to 2D lets the firmware restore its native mode; the tested One reports mode 9 (1920×1080 at 90 Hz) and rejects the legacy mode-2 EDID command. Refresh selection follows Android's advertised modes. The shared TCP transport and orientation filter are reused; the filter's directed-motion captures were made on 1S, so quantitative One sensor-axis alignment and drift remain unverified. A wearer confirmed the VR image and working head tracking on a Retroid Pocket 6, but reported stutters/jumps. No firmware writes, calibration changes on the glasses, Eye support, or positional tracking are added.
-
-Test on the target Android device before claiming support:
-
-1. Use a video/data-capable USB-C connection and current glasses firmware. Select **Follow** mode. Double-click the red **X** button, then turn **Spatial Screen → Stabilizer** off; XREAL enables it by default in Follow mode. Also disable automatic 2D-to-3D conversion. See [XREAL's Stabilizer instructions](https://tutorials.xreal.com/docs/glasses/one-series/osd/stabilizer/).
-2. Confirm **Setup → Smart glasses** identifies **XREAL One**, obtains a picture, and connects tracking. A picture without tracking may mean Android did not expose the USB-Ethernet link. Keep Wi-Fi connected and check Internet access still works.
-3. Start with the 2D virtual screen. Recenter while level, then independently test looking left/right, up/down, and tilting each way. Stop tracked rendering if the view moves incorrectly or causes discomfort.
-4. Test SBS at 60 Hz, verify distinct left/right images, then turn it off and confirm 1920×1080 2D returns. Test SteamVR only after this works; the headset pose remains rotational 3DoF.
-5. Check stationary drift, a longer session, unplug/replug, app background/foreground, and disconnect during a mode change. A successful command acknowledgement alone is not a passed hardware test.
-
-References: [XREAL One specifications](https://docs.xreal.com/XREALDevices/XREAL%20Glasses), [protocol evidence and prior 1S captures](development/xreal-investigation.md). The brightness/dimming controls remain hidden for One until separately verified; use the glasses' physical controls.
+The capability definitions are maintained in [VITURE models](../app/src/main/java/com/droiddeck/launcher/glasses/VitureProtocol.kt), [RayNeo models](../app/src/main/java/com/droiddeck/launcher/glasses/RayNeoModel.kt), [XREAL models](../app/src/main/java/com/droiddeck/launcher/glasses/XrealModel.kt), [Rokid](../app/src/main/java/com/droiddeck/launcher/glasses/RokidModel.kt), and [connection capability routing](../app/src/main/java/com/droiddeck/launcher/glasses/Glasses.kt). Update this matrix when those integrations change.

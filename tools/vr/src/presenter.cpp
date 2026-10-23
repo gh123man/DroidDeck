@@ -10,7 +10,6 @@ typedef unsigned long VisualID;
 
 #include "../../../app/src/main/cpp/waylandcomp/src/headpose_shm.h"
 #include "presenter.h"
-#include "../../../app/src/main/cpp/waylandcomp/src/motion_trace.h"
 #include "presenter_image.h"
 #include "present_sync.h"
 #include "xr_tracking_file.h"
@@ -134,7 +133,6 @@ public:
     bool Acquired() const { return acquired_; }
     void BeginGpu() { gpuComplete_ = false; }
     void EndGpu() { gpuComplete_ = true; }
-    uint64_t Ticket() const { return lease_.ticket; }
     bool Release() { return gpuComplete_ && droiddeck_producer_release(&lease_); }
 private:
     droiddeck_producer_lease lease_{-1, 0};
@@ -229,7 +227,6 @@ private:
         frameChannel_ = FrameChannelRequested();
         const char *lease = getenv("DROIDDECK_VR_PRODUCER_LEASE");
         producerLease_ = lease && !strcmp(lease, "1");
-        if (!frameChannel_ && producerLease_) Log("presenter: reserved texture generations ready before retained producer lease and GPU copy");
         if (!frameChannel_) wayland_ = !(mode && !strcmp(mode, "x11")) && InitWayland();
         if (!frameChannel_ && !wayland_ && !InitWindow()) {
             Log("presenter: unavailable, frames are not shown");
@@ -292,13 +289,11 @@ private:
             }
             auto now = std::chrono::steady_clock::now();
             if (now - lastLog > std::chrono::seconds(10)) {
-                Log("presenter: %llu frames shown, %llu submitted, %llu waited for the GPU (longest %.1f ms), %llu late, producer lease %.1f ms max / %llu misses (last 10 s)",
+                Log("presenter: %llu frames shown, %llu submitted, %llu waited for the GPU (longest %.1f ms), %llu late (last 10 s)",
                     (unsigned long long)shown, (unsigned long long)submitted_.exchange(0), (unsigned long long)waited,
-                    std::chrono::duration<double, std::milli>(longest).count(), (unsigned long long)late,
-                    std::chrono::duration<double, std::milli>(longestLease_).count(), (unsigned long long)leaseMisses_);
+                    std::chrono::duration<double, std::milli>(longest).count(), (unsigned long long)late);
                 shown = waited = late = 0;
                 longest = {};
-                longestLease_ = {}; leaseMisses_ = 0;
                 lastLog = now;
             }
         }
@@ -698,7 +693,6 @@ private:
 
     void DestroyCapture() {
         if (!dev_) return;
-        if (motionMapping_) { vk_.UnmapMemory(dev_, readbackMemory_); motionMapping_ = nullptr; }
         if (captureImage_) vk_.DestroyImage(dev_, captureImage_, nullptr);
         if (captureMemory_) vk_.FreeMemory(dev_, captureMemory_, nullptr);
         if (readbackBuffer_) vk_.DestroyBuffer(dev_, readbackBuffer_, nullptr);
@@ -828,81 +822,23 @@ private:
         return sent;
     }
 
-    bool PrepareMotionPixels() {
-        if (!dd_motion_pixels_enabled()) return false;
-        if (motionMapping_) return true;
-        if (dd_motion_pixels_recording()) return false;
-        DroidDeckXrFrameHeader size{};
-        size.width = DD_MOTION_PIXEL_WIDTH; size.height = DD_MOTION_PIXEL_HEIGHT;
-        size.bytes = DD_MOTION_PIXEL_BYTES;
-        if (!PrepareCapture(size)) return false;
-        if (!motionMapping_ && vk_.MapMemory(dev_, readbackMemory_, 0, VK_WHOLE_SIZE, 0, &motionMapping_) != VK_SUCCESS)
-            return false;
-        return true;
-    }
-
-    void RecordMotionPixels(const EyeFrame &f, const Imported &eye) {
-        auto before = Barrier(captureImage_, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                              0, VK_ACCESS_TRANSFER_WRITE_BIT);
-        vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                               0, 0, nullptr, 0, nullptr, 1, &before);
-        VkImageBlit blit{};
-        blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        blit.srcOffsets[0] = {(int32_t)(f.bounds[0][0] * eye.width), (int32_t)(f.bounds[0][1] * eye.height), 0};
-        blit.srcOffsets[1] = {(int32_t)(f.bounds[0][2] * eye.width), (int32_t)(f.bounds[0][3] * eye.height), 1};
-        blit.dstOffsets[1] = {DD_MOTION_PIXEL_WIDTH, DD_MOTION_PIXEL_HEIGHT, 1};
-        vk_.CmdBlitImage(cmd_, eye.image, VK_IMAGE_LAYOUT_GENERAL, captureImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                         1, &blit, VK_FILTER_LINEAR);
-        auto after = Barrier(captureImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                             VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-        vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                               0, 0, nullptr, 0, nullptr, 1, &after);
-        VkBufferImageCopy copy{}; copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        copy.imageExtent = {DD_MOTION_PIXEL_WIDTH, DD_MOTION_PIXEL_HEIGHT, 1};
-        vk_.CmdCopyImageToBuffer(cmd_, captureImage_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readbackBuffer_, 1, &copy);
-        VkBufferMemoryBarrier host{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-        host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        host.srcQueueFamilyIndex = host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        host.buffer = readbackBuffer_; host.size = VK_WHOLE_SIZE;
-        vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                               0, 0, nullptr, 1, &host, 0, nullptr);
-    }
-
     bool Draw(const EyeFrame &f) {
-        auto trace = [&f](unsigned stage, uint64_t related = 0, VkResult result = VK_SUCCESS) {
-            double v[] = {(double)result};
-            dd_motion_emit(DD_MOTION_COPY, stage, f.render.frame_id, related, v, 1);
-        };
-        trace(0);
         const Imported *eye[2] = {Find(f.texture[0]), Find(f.texture[1])};
         if (!eye[0] || !eye[1] || !swapchain_) return false;
         if (SrgbEyeFormat(eye[0]->format) != SrgbEyeFormat(eye[1]->format)) return false;
         std::optional<CaptureLease> lease;
         if (producerLease_) {
-            if (!eye[0]->producerPid || eye[0]->producerPid != eye[1]->producerPid) { leaseMisses_++; return false; }
-            const auto start = std::chrono::steady_clock::now();
-            trace(1, eye[0]->producerPid);
+            if (!eye[0]->producerPid || eye[0]->producerPid != eye[1]->producerPid) return false;
+
             droiddeck_producer_target targets[2] = {
                 {eye[0]->inode,eye[0]->device,f.minimumWrite[0]},
                 {eye[1]->inode,eye[1]->device,f.minimumWrite[1]}};
             lease.emplace(eye[0]->producerPid,targets);
-            trace(2, eye[0]->producerPid, lease->Acquired() ? VK_SUCCESS : VK_ERROR_UNKNOWN);
-            longestLease_ = std::max(longestLease_, std::chrono::steady_clock::now() - start);
-            if (!lease->Acquired()) { leaseMisses_++; return false; }
+            if (!lease->Acquired()) return false;
         }
         if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
-        double identity[] = {(double)eye[0]->device, (double)(lease ? lease->Ticket() : 0), (double)eye[0]->producerPid, (double)f.minimumWrite[0], (double)f.minimumWrite[1]};
-        dd_motion_emit(DD_MOTION_TEXTURE, 0, f.render.frame_id, eye[0]->inode, identity, 5);
-        double rightIdentity[] = {(double)eye[1]->device, (double)(lease ? lease->Ticket() : 0),
-                                  (double)eye[1]->producerPid, (double)f.minimumWrite[1]};
-        dd_motion_emit(DD_MOTION_TEXTURE, 1, f.render.frame_id, eye[1]->inode, rightIdentity, 4);
-        const bool motionReady = PrepareMotionPixels();
-        const bool motionRecord = dd_motion_pixels_recording();
-        if (motionRecord && !motionReady) dd_motion_pixels_emit(f.render.frame_id, f.texture[0], nullptr);
         uint32_t idx = 0;
-        trace(3);
         VkResult r = vk_.AcquireNextImageKHR(dev_, swapchain_, 100000000ull, acquired_, VK_NULL_HANDLE, &idx);
-        trace(4, idx, r);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
             static int said;
             if (said++ < 3) Log("presenter: acquire %d", r);
@@ -940,7 +876,6 @@ private:
             vk_.CmdBlitImage(cmd_, eye[e]->image, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
                              VK_FILTER_LINEAR);
         }
-        if (motionRecord && motionReady) RecordMotionPixels(f, *eye[0]);
         VkImageMemoryBarrier post[3] = {
             Barrier(dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0),
             Barrier(eye[0]->image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_READ_BIT, 0, qfam_,
@@ -953,28 +888,16 @@ private:
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered};
         if (lease) lease->BeginGpu();
-        trace(5, idx);
         r = vk_.QueueSubmit(queue_, 1, &si, fence_);
-        trace(6, idx, r);
         if (r == VK_SUCCESS) r = vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
-        trace(7, idx, r);
         if (r != VK_SUCCESS) {
             if (lease && vk_.DeviceWaitIdle(dev_) == VK_SUCCESS) lease->EndGpu();
             Log("presenter: GPU copy failed %d", r);
             Fail(); return false;
         }
         if (lease) { lease->EndGpu(); if (!lease->Release()) { Fail(); return false; } }
-        trace(8, idx);
-        if (motionRecord && motionReady) {
-            VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
-            range.memory = readbackMemory_; range.size = VK_WHOLE_SIZE;
-            const bool valid = vk_.InvalidateMappedMemoryRanges(dev_, 1, &range) == VK_SUCCESS;
-            dd_motion_pixels_emit(f.render.frame_id, f.texture[0], valid ? motionMapping_ : nullptr);
-        }
         VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered, 1, &swapchain_, &idx, nullptr};
-        trace(9, idx);
         r = vk_.QueuePresentKHR(queue_, &pi);
-        trace(10, idx, r);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
             static int said;
             if (said++ < 3) Log("presenter: present %d", r);
@@ -984,8 +907,6 @@ private:
 
     std::mutex mutex_;
     bool producerLease_ = false;
-    uint64_t leaseMisses_ = 0;
-    std::chrono::steady_clock::duration longestLease_{};
     std::condition_variable cv_;
     std::vector<PendingImport> pending_;
     std::vector<uint64_t> removals_;
@@ -1003,7 +924,6 @@ private:
     VkImage captureImage_ = VK_NULL_HANDLE;
     VkDeviceMemory captureMemory_ = VK_NULL_HANDLE, readbackMemory_ = VK_NULL_HANDLE;
     VkBuffer readbackBuffer_ = VK_NULL_HANDLE;
-    void *motionMapping_ = nullptr;
     uint32_t captureWidth_ = 0, captureHeight_ = 0;
     std::atomic<uint64_t> submitted_{0};
     std::thread thread_;

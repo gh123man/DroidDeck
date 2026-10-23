@@ -1,5 +1,4 @@
 #define _POSIX_C_SOURCE 200809L
-#include "motion_trace.h"
 #include "vk_present.h"
 #include "vk_loader.h"
 #include "sc_layer.h"
@@ -1493,9 +1492,6 @@ static void send_hdr_metadata(const struct droiddeck_color *c) {
 
 static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, int n,
                        const struct vkp_hdr_frame *hf, int *how) {
-    static uint64_t motion_frame;
-    const uint64_t motion_id = ++motion_frame;
-    dd_motion_emit(DD_MOTION_ANDROID, 0, motion_id, 0, NULL, 0);
     if (how) *how = 0;
     vkp_apply_window_request();
     sc_layer_hide_base();
@@ -1520,7 +1516,6 @@ static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, i
     uint32_t img = 0;
     VkResult ar;
     if (acquire_image(0, 1, &img, &ar) != 0) return -1;
-    dd_motion_emit(DD_MOTION_ANDROID, 1, motion_id, img, NULL, 0);
     update_map(scene_w, scene_h);
     if (g_swap_is_hdr && hf && hf->color && hf->color->identity != g_swap_md_identity) {
         g_swap_md_identity = hf->color->identity;
@@ -1709,11 +1704,7 @@ static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, i
         VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1,
                            .pWaitSemaphores = &g_acqs[k], .pWaitDstStageMask = &wait, .commandBufferCount = 1,
                            .pCommandBuffers = &g_cmds[k], .signalSemaphoreCount = 1, .pSignalSemaphores = &g_rnds[img]};
-        double motion_values[] = {(double)k, 0};
-        dd_motion_emit(DD_MOTION_ANDROID, 2, motion_id, img, motion_values, 2);
         VkResult qr = g_vk.QueueSubmit(g_queue, 1, &si, last ? g_fence : VK_NULL_HANDLE);
-        motion_values[1] = qr;
-        dd_motion_emit(DD_MOTION_ANDROID, 3, motion_id, img, motion_values, 2);
         if (qr != VK_SUCCESS) {
             if (qr == VK_ERROR_DEVICE_LOST) device_lost("submit");
             else LOGE("present: submit %d/%d failed (%d)", k + 1, presents, (int)qr);
@@ -1725,10 +1716,7 @@ static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, i
                                .pWaitSemaphores = &g_rnds[img], .swapchainCount = 1,
                                .pSwapchains = &g_swapchain, .pImageIndices = &img};
         const int64_t t_pres = perf_now();
-        dd_motion_emit(DD_MOTION_ANDROID, 4, motion_id, img, motion_values, 2);
         pr = g_vk.QueuePresentKHR(g_queue, &pi);
-        motion_values[1] = pr;
-        dd_motion_emit(DD_MOTION_ANDROID, 5, motion_id, img, motion_values, 2);
         perf_add(&g_perf.present_ns, &g_perf.present_max_ns, &g_perf.presents, perf_now() - t_pres);
         if (k < ngen) presented_gen++;
         if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_ERROR_SURFACE_LOST_KHR || pr == VK_ERROR_DEVICE_LOST) break;
@@ -1738,8 +1726,6 @@ static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, i
         g_vk.QueueSubmit(g_queue, 1, &si, g_fence);
     }
     VkResult fr = timed_wait(g_fence, UINT64_MAX);
-    double motion_result[] = {(double)fr};
-    dd_motion_emit(DD_MOTION_ANDROID, 6, motion_id, img, motion_result, 1);
     if (fg) vkp_framegen_presented(presented_gen);
     if (fr == VK_ERROR_DEVICE_LOST || pr == VK_ERROR_DEVICE_LOST) { device_lost("present"); return -1; }
     if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_ERROR_SURFACE_LOST_KHR) {

@@ -16,11 +16,6 @@ on:
       - 'LICENSE'
       - '.gitignore'
   workflow_dispatch:
-    inputs:
-      skip_tests:
-        description: Build a test APK without running the post-build test suites
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -589,7 +584,6 @@ jobs:
             || { echo "::error::Cargo.lock changed during the build; commit the regenerated lockfile (uploaded as stores-cargo-lock)"; exit 1; }
 
       - name: Store engines host unit tests
-        if: ${{ !inputs.skip_tests }}
         timeout-minutes: 10
         continue-on-error: true
         run: |
@@ -605,18 +599,15 @@ jobs:
           if-no-files-found: ignore
 
       - name: Install Python test dependencies
-        if: ${{ !inputs.skip_tests }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq python3-yaml
 
       - name: Steam import and game environment tests
-        if: ${{ !inputs.skip_tests }}
         run: python3 -m unittest discover -s tools/tests -p 'test_*.py'
 
       - name: Unit tests
         id: unit-tests
-        if: ${{ !inputs.skip_tests }}
         run: |
           set -o pipefail
           mkdir -p app/build

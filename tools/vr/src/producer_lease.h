@@ -96,7 +96,7 @@ static inline int droiddeck_producer_request(uint32_t pid, struct droiddeck_prod
     int descriptor = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
     if (descriptor < 0) return 0;
     int64_t deadline = droiddeck_producer_now() + 250000000LL;
-    struct droiddeck_producer_message message = {DROIDDECK_PRODUCER_MAGIC, reserve ? DROIDDECK_PRODUCER_RESERVE : DROIDDECK_PRODUCER_ACQUIRE, 0, {{0}}};
+    struct droiddeck_producer_message message = {DROIDDECK_PRODUCER_MAGIC, reserve ? DROIDDECK_PRODUCER_RESERVE : DROIDDECK_PRODUCER_ACQUIRE, 0, {{0, 0, 0}}};
     if (targets) memcpy(message.targets, targets, sizeof(message.targets));
     if (connect(descriptor, (struct sockaddr *)&address, sizeof(address)) != 0 ||
         !droiddeck_producer_peer(descriptor, pid) ||
@@ -131,7 +131,7 @@ static inline uint64_t droiddeck_producer_reserve(uint32_t pid) {
 static inline int droiddeck_producer_release(struct droiddeck_producer_lease *lease) {
     if (lease->descriptor < 0) return 0;
     int64_t deadline = droiddeck_producer_now() + 250000000LL;
-    struct droiddeck_producer_message message = {DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_RELEASE, lease->ticket, {{0}}};
+    struct droiddeck_producer_message message = {DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_RELEASE, lease->ticket, {{0, 0, 0}}};
     int released = droiddeck_producer_io(lease->descriptor, &message, 1, deadline) &&
                    droiddeck_producer_io(lease->descriptor, &message, 0, deadline) &&
                    message.command == DROIDDECK_PRODUCER_RELEASED && message.ticket == lease->ticket;
@@ -150,7 +150,6 @@ struct droiddeck_producer_server {
     int (*acquire_targets)(int64_t, const struct droiddeck_producer_target *);
     uint64_t (*reserve)(void);
     void (*release)(void);
-    void (*diagnostic_ready)(uint64_t);
     void (*quarantine)(void);
     char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
 };
@@ -186,8 +185,7 @@ static void *droiddeck_producer_serve(void *argument) {
             close(connection); continue;
         }
         uint64_t granted = ++ticket;
-        if (server->diagnostic_ready) server->diagnostic_ready(granted);
-        message = (struct droiddeck_producer_message){DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_READY, granted, {{0}}};
+        message = (struct droiddeck_producer_message){DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_READY, granted, {{0, 0, 0}}};
         if (!droiddeck_producer_io(connection, &message, 1, droiddeck_producer_now() + 100000000LL)) {
             server->release();
             close(connection);
@@ -209,7 +207,7 @@ static void *droiddeck_producer_serve(void *argument) {
             break;
         }
         server->release();
-        message = (struct droiddeck_producer_message){DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_RELEASED, granted, {{0}}};
+        message = (struct droiddeck_producer_message){DROIDDECK_PRODUCER_MAGIC, DROIDDECK_PRODUCER_RELEASED, granted, {{0, 0, 0}}};
         droiddeck_producer_io(connection, &message, 1, droiddeck_producer_now() + 100000000LL);
         close(connection);
     }

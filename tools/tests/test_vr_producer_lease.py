@@ -16,7 +16,7 @@ class VrProducerLeaseTest(unittest.TestCase):
             command = ["gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-pthread"]
             if headers:
                 command += ["-I" + str(headers)]
-            command += [str(repository / "tools/vr/tests" / source), "-ldl", "-lm"]
+            command += [str(repository / "tools/vr/tests" / source), "-ldl"]
             if gpu:
                 command += ["-l:libvulkan.so.1"]
             subprocess.run(command + ["-o", str(executable)], check=True)
