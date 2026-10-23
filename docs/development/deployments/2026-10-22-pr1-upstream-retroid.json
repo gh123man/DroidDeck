@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-22",
+  "environment": "Retroid Pocket 6 / Android 13 / XREAL One",
+  "package": "com.droiddeck.launcher.debug",
+  "pull_request": "https://github.com/gh123man/DroidDeck/pull/1",
+  "source_commit": "ce0001a74bbe594b818b50cadbef836aa4c1460e",
+  "upstream_commit": "22eac0831d10671f6bc2ad914a93a0da5046c7df",
+  "ci_url": "https://github.com/gh123man/DroidDeck/actions/runs/39881221481",
+  "ci_apk_sha256": "558ba56f9f97b0fed6fc62968b2bb61412fc69433c59a2bd75ff9a955cd53107",
+  "apk_sha256": "fe191edad218569ee6fb89b9bd9ef1b6ac1f3c8167533ed647059c0397f55209",
+  "runtime_hashes": {
+    "assets/linuxfs/usr/local/bin/droiddeck-steamvr": "2bf7a98d3a7ef6ebf4be26e07a84dc06323aeb38fe6434e4cc41a1771398409c",
+    "assets/linuxfs/usr/local/lib/droiddeck-vr/droiddeck/bin/linuxarm64/driver_droiddeck.so": "08b4eb307c333f639fbe8fa933b35426dd0b5237b17a8549d62c31ca749fc417",
+    "lib/arm64-v8a/libdroiddeckwayland.so": "bbce41fc57a933bf55e39609137f416424be270745dda21cd83a6af4c785bddf",
+    "assets/linuxfs/usr/local/lib/droiddeck-vr/layer/libVkLayer_droiddeck_vr.so": "9354ede0e91b55c56d8626f68d632ddc08b31959aaebd206a809ddeb7a841b2b"
+  },
+  "packaging": "CI release APK; only manifest package, authority, and task identifiers changed for the existing test-app slot. All compiled code and runtime assets match CI. Signed with the existing AOSP test key.",
+  "validation": "APK compilation, bundled-runtime checks, signature and alignment verification passed. Post-build Rust, Python, and Android unit tests were explicitly skipped at the user request.",
+  "deployment_status": "Pinned before installation; device confirmation pending."
+}
