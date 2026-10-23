@@ -207,8 +207,18 @@ class SteamVrHelperTest(unittest.TestCase):
         self.environment.update(DROIDDECK_VR_PRESENT='questframes', DROIDDECK_VR_PRODUCER_LEASE='0')
         self.assertIn('present=questframes lease=0', self.lease_log())
 
-    def test_flat_presenter_does_not_enable_the_producer_lease(self):
-        self.assertIn('present=unset lease=unset', self.lease_log())
+    def test_flat_presenter_enables_the_producer_lease(self):
+        self.assertIn('present=unset lease=1', self.lease_log())
+
+    def test_explicit_flat_presenters_enable_the_producer_lease(self):
+        for mode in ('wayland', 'x11'):
+            with self.subTest(mode=mode):
+                self.environment['DROIDDECK_VR_PRESENT'] = mode
+                self.assertIn(f'present={mode} lease=1', self.lease_log())
+
+    def test_flat_explicit_override_is_preserved(self):
+        self.environment['DROIDDECK_VR_PRODUCER_LEASE'] = '0'
+        self.assertIn('present=unset lease=0', self.lease_log())
 
     def registration(self):
         return (self.home / '.config/openvr/openvrpaths.vrpath',

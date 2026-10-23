@@ -37,18 +37,36 @@ compile() {
         cc -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Ibuild/vr/include \
             -o build/vr/test_compositor_submit tools/vr/tests/test_compositor_submit.c -ldl
         build/vr/test_compositor_submit
+        cc -std=c11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -pthread -Ibuild/vr/include \
+            -o build/vr/test_producer_writes tools/vr/tests/test_producer_writes.c -ldl
+        build/vr/test_producer_writes
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools/vr/src \
             -o build/vr/test_render_target tools/vr/tests/test_render_target.cpp
         build/vr/test_render_target
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Ibuild/vr/include -Itools/vr/src \
             -o build/vr/test_presenter_image tools/vr/tests/test_presenter_image.cpp
         build/vr/test_presenter_image
+        cc -O2 -Itools/vr/third_party/wayland -c tools/vr/src/wayland_client_stub.c -o build/vr/test_wayland.o
+        cc -O2 -Itools/vr/third_party/wayland -c app/src/main/cpp/waylandcomp/generated/xdg-shell-protocol.c -o build/vr/test_xdg.o
+        for test in presenter_completion presenter_lease; do
+            c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -pthread \
+                -Ibuild/vr/include -Itools/vr/third_party/wayland -Iapp/src/main/cpp/waylandcomp/generated \
+                -o build/vr/test_$test tools/vr/tests/test_$test.cpp \
+                build/vr/test_wayland.o build/vr/test_xdg.o -ldl
+            build/vr/test_$test
+        done
+        c++ -std=c++17 -O2 -Wall -Wextra -Werror -Wno-unused-parameter -pthread \
+            -o build/vr/test_xr_tracking tools/vr/tests/test_xr_tracking.cpp
+        build/vr/test_xr_tracking
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools/vr/src \
             -o build/vr/test_spatial_tracking tools/vr/tests/test_spatial_tracking.cpp
         build/vr/test_spatial_tracking
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools/vr/src \
             -o build/vr/test_adaptive_pose tools/vr/tests/test_adaptive_pose.cpp
         build/vr/test_adaptive_pose
+        c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Itools/vr/src \
+            -o build/vr/test_head_pose_contention tools/vr/tests/test_head_pose_contention.cpp
+        build/vr/test_head_pose_contention
         c++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Itools/vr/src \
             -o build/vr/test_optical_controller tools/vr/tests/test_optical_controller.cpp
         build/vr/test_optical_controller

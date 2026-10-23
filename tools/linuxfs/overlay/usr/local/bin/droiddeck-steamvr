@@ -230,9 +230,9 @@ JSON
             echo "Disabled Frame-only CVP backend for Quest; SteamVR uses its normal compositor"
         fi
     fi
-    if [ "${DROIDDECK_VR_PRESENT:-}" = questframes ]; then
-        export DROIDDECK_VR_PRODUCER_LEASE=${DROIDDECK_VR_PRODUCER_LEASE:-1}
-    fi
+    case "${DROIDDECK_VR_PRESENT:-}" in
+        ''|wayland|x11|questframes) export DROIDDECK_VR_PRODUCER_LEASE=${DROIDDECK_VR_PRODUCER_LEASE:-1} ;;
+    esac
     if [ -z "${DROIDDECK_VR_DISPLAY_MODE:-}" ] && [ -x "$driver/bin/linuxarm64/xr-display-mode" ]; then
         mode=$("$driver/bin/linuxarm64/xr-display-mode") || mode=
         if [ -n "$mode" ]; then export DROIDDECK_VR_DISPLAY_MODE="$mode"; fi

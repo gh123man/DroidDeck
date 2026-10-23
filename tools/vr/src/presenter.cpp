@@ -28,8 +28,10 @@ typedef unsigned long VisualID;
 #include <fcntl.h>
 #include <linux/futex.h>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <thread>
 #include <unistd.h>
@@ -109,6 +111,7 @@ struct Imported {
     uint32_t width = 0, height = 0;
     uint32_t producerPid = 0;
     VkFormat format = VK_FORMAT_UNDEFINED;
+    uint64_t inode = 0, device = 0;
 };
 
 struct PendingImport {
@@ -120,6 +123,8 @@ struct PendingImport {
 class CaptureLease {
 public:
     explicit CaptureLease(uint32_t pid) : acquired_(droiddeck_producer_acquire(pid, &lease_)) {}
+    CaptureLease(uint32_t pid,const droiddeck_producer_target targets[2])
+        : acquired_(droiddeck_producer_acquire_targets(pid,&lease_,targets)) {}
     ~CaptureLease() {
         if (lease_.descriptor < 0) return;
         if (gpuComplete_) droiddeck_producer_release(&lease_);
@@ -136,6 +141,7 @@ private:
 };
 
 class Impl {
+    friend struct PresenterTest;
 public:
     static Impl &Get() {
         static Impl *impl = made_ = new Impl;
@@ -165,8 +171,7 @@ public:
     void Submit(const EyeFrame &f) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (failed_ || exit_) return;
-        bool blocking = FrameChannelRequested();
-        if (blocking) cv_.wait(lock, [this] { return failed_ || exit_ || (!haveFrame_ && !inFlight_); });
+        cv_.wait(lock, [this] { return failed_ || exit_ || (!haveFrame_ && !inFlight_); });
         if (failed_ || exit_) return;
         EnsureThread();
         frame_ = f;
@@ -180,7 +185,8 @@ public:
         submitted_++;
         uint64_t ticket = ++ticket_;
         cv_.notify_all();
-        if (blocking) cv_.wait(lock, [this, ticket] { return failed_ || completed_ >= ticket; });
+        // Submitted eye textures may be reused after Present returns.
+        cv_.wait(lock, [this, ticket] { return failed_ || exit_ || completed_ >= ticket; });
     }
 
     void Shutdown() {
@@ -219,6 +225,8 @@ private:
     void Run() {
         const char *mode = getenv("DROIDDECK_VR_PRESENT");
         frameChannel_ = FrameChannelRequested();
+        const char *lease = getenv("DROIDDECK_VR_PRODUCER_LEASE");
+        producerLease_ = lease && !strcmp(lease, "1");
         if (!frameChannel_) wayland_ = !(mode && !strcmp(mode, "x11")) && InitWayland();
         if (!frameChannel_ && !wayland_ && !InitWindow()) {
             Log("presenter: unavailable, frames are not shown");
@@ -258,7 +266,7 @@ private:
             if (wl_) { wl_display_dispatch_pending(wl_); wl_display_flush(wl_); }
             for (auto &p : imports) Import(p);
             for (auto h : removals) Forget(h);
-            if (f.texture[0] && !frameChannel_ && tracked) {
+            if (f.texture[0] && !frameChannel_ && !producerLease_ && tracked) {
                 const auto start = std::chrono::steady_clock::now();
                 const int r = WaitDrawn(mark, start + kDrawnTimeout);
                 if (r > 0) {
@@ -267,7 +275,7 @@ private:
                 } else if (r < 0) {
                     late++;
                 }
-            } else if (f.texture[0] && !frameChannel_) {
+            } else if (f.texture[0] && !frameChannel_ && !producerLease_) {
                 std::this_thread::sleep_until(at + guard_);
             }
             if (!frameChannel_) {
@@ -296,9 +304,8 @@ private:
         DestroyCapture();
         while (!textures_.empty()) Forget(textures_.back().handle);
         if (dev_) {
-            if (swapchain_) vk_.DestroySwapchainKHR(dev_, swapchain_, nullptr);
+            DestroySwapchain();
             if (acquired_) vk_.DestroySemaphore(dev_, acquired_, nullptr);
-            if (rendered_) vk_.DestroySemaphore(dev_, rendered_, nullptr);
             if (fence_) vk_.DestroyFence(dev_, fence_, nullptr);
             if (pool_) vk_.DestroyCommandPool(dev_, pool_, nullptr);
             vk_.DestroyDevice(dev_, nullptr); dev_ = VK_NULL_HANDLE;
@@ -339,9 +346,7 @@ private:
         const auto now = std::chrono::steady_clock::now();
         if (!resized && !encodingChanged && (swapchain_ || now < retryAt_)) return;
         vk_.DeviceWaitIdle(dev_);
-        if (swapchain_) vk_.DestroySwapchainKHR(dev_, swapchain_, nullptr);
-        swapchain_ = VK_NULL_HANDLE;
-        images_.clear();
+        DestroySwapchain();
         if (resized) Log("presenter: panel now %ux%u (was %ux%u)", w, h, width_, height_);
         width_ = w;
         height_ = h;
@@ -535,8 +540,7 @@ private:
         VkFenceCreateInfo fci = {VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, VK_FENCE_CREATE_SIGNALED_BIT};
         vk_.CreateFence(dev_, &fci, nullptr, &fence_);
         VkSemaphoreCreateInfo semci = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0};
-        vk_.CreateSemaphore(dev_, &semci, nullptr, &acquired_);
-        vk_.CreateSemaphore(dev_, &semci, nullptr, &rendered_);
+        if (vk_.CreateSemaphore(dev_, &semci, nullptr, &acquired_) != VK_SUCCESS) return false;
         Log("presenter: Vulkan on %s, queue family %u", props.deviceName, qfam_);
         return true;
     }
@@ -585,12 +589,38 @@ private:
             return false;
         }
         uint32_t ni = 0;
-        vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, nullptr);
+        if (vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, nullptr) != VK_SUCCESS || !ni) {
+            DestroySwapchain(); return false;
+        }
         images_.resize(ni);
-        vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, images_.data());
+        if (vk_.GetSwapchainImagesKHR(dev_, swapchain_, &ni, images_.data()) != VK_SUCCESS) {
+            DestroySwapchain(); return false;
+        }
+        images_.resize(ni);
+        if (!CreatePresentSemaphores()) { DestroySwapchain(); return false; }
         Log("presenter: swapchain %ux%u, format %d, %u images, %s", ext.width, ext.height, fmt.format, ni,
             pm == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox" : "fifo");
         return true;
+    }
+
+    bool CreatePresentSemaphores() {
+        rendered_.resize(images_.size(), VK_NULL_HANDLE);
+        VkSemaphoreCreateInfo info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        for (auto &semaphore : rendered_) {
+            VkSemaphore created = VK_NULL_HANDLE;
+            if (vk_.CreateSemaphore(dev_, &info, nullptr, &created) != VK_SUCCESS) return false;
+            semaphore = created;
+        }
+        return true;
+    }
+
+    void DestroySwapchain() {
+        for (auto semaphore : rendered_)
+            if (semaphore) vk_.DestroySemaphore(dev_, semaphore, nullptr);
+        rendered_.clear();
+        if (swapchain_) vk_.DestroySwapchainKHR(dev_, swapchain_, nullptr);
+        swapchain_ = VK_NULL_HANDLE;
+        images_.clear();
     }
 
     int MemoryType(uint32_t bits) {
@@ -606,6 +636,8 @@ private:
         im.height = p.height;
         im.producerPid = p.producerPid;
         im.format = (VkFormat)p.format;
+        struct stat identity{};
+        if (fstat(p.fd, &identity) == 0) { im.inode = identity.st_ino; im.device = identity.st_dev; }
         // Dedicated OPAQUE_FD imports must match SteamVR's exported image description.
         SharedEyeImage description(im.format, p.width, p.height);
         VkResult r = vk_.CreateImage(dev_, &description.info, nullptr, &im.image);
@@ -794,7 +826,17 @@ private:
         const Imported *eye[2] = {Find(f.texture[0]), Find(f.texture[1])};
         if (!eye[0] || !eye[1] || !swapchain_) return false;
         if (SrgbEyeFormat(eye[0]->format) != SrgbEyeFormat(eye[1]->format)) return false;
-        vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+        std::optional<CaptureLease> lease;
+        if (producerLease_) {
+            if (!eye[0]->producerPid || eye[0]->producerPid != eye[1]->producerPid) return false;
+
+            droiddeck_producer_target targets[2] = {
+                {eye[0]->inode,eye[0]->device,f.minimumWrite[0]},
+                {eye[1]->inode,eye[1]->device,f.minimumWrite[1]}};
+            lease.emplace(eye[0]->producerPid,targets);
+            if (!lease->Acquired()) return false;
+        }
+        if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { Fail(); return false; }
         uint32_t idx = 0;
         VkResult r = vk_.AcquireNextImageKHR(dev_, swapchain_, 100000000ull, acquired_, VK_NULL_HANDLE, &idx);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
@@ -802,10 +844,11 @@ private:
             if (said++ < 3) Log("presenter: acquire %d", r);
             return false;
         }
-        vk_.ResetFences(dev_, 1, &fence_);
-        vk_.ResetCommandBuffer(cmd_, 0);
+        // Waiting on acquisition retires this image's previous presentation semaphore wait.
+        const VkSemaphore rendered = rendered_[idx];
+        if (vk_.ResetFences(dev_, 1, &fence_) != VK_SUCCESS || vk_.ResetCommandBuffer(cmd_, 0) != VK_SUCCESS) { Fail(); return false; }
         VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-        vk_.BeginCommandBuffer(cmd_, &bi);
+        if (vk_.BeginCommandBuffer(cmd_, &bi) != VK_SUCCESS) { Fail(); return false; }
         VkImage dst = images_[idx];
         VkImageMemoryBarrier pre[3] = {
             Barrier(dst, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT),
@@ -841,15 +884,19 @@ private:
                     VK_QUEUE_FAMILY_EXTERNAL)};
         vk_.CmdPipelineBarrier(cmd_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr,
                                eye[0] == eye[1] ? 2 : 3, post);
-        vk_.EndCommandBuffer(cmd_);
+        if (vk_.EndCommandBuffer(cmd_) != VK_SUCCESS) { Fail(); return false; }
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered_};
-        if ((r = vk_.QueueSubmit(queue_, 1, &si, fence_)) != VK_SUCCESS) { Log("presenter: submit %d", r); return false; }
-        if (vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, (uint64_t)std::chrono::nanoseconds(kDrawnTimeout).count()) == VK_TIMEOUT) {
-            static int said;
-            if (said++ < 3) Log("presenter: the copy took over %lld ms; showing it anyway", (long long)kDrawnTimeout.count());
+        VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &acquired_, &wait, 1, &cmd_, 1, &rendered};
+        if (lease) lease->BeginGpu();
+        r = vk_.QueueSubmit(queue_, 1, &si, fence_);
+        if (r == VK_SUCCESS) r = vk_.WaitForFences(dev_, 1, &fence_, VK_TRUE, UINT64_MAX);
+        if (r != VK_SUCCESS) {
+            if (lease && vk_.DeviceWaitIdle(dev_) == VK_SUCCESS) lease->EndGpu();
+            Log("presenter: GPU copy failed %d", r);
+            Fail(); return false;
         }
-        VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered_, 1, &swapchain_, &idx, nullptr};
+        if (lease) { lease->EndGpu(); if (!lease->Release()) { Fail(); return false; } }
+        VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &rendered, 1, &swapchain_, &idx, nullptr};
         r = vk_.QueuePresentKHR(queue_, &pi);
         if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) {
             static int said;
@@ -859,6 +906,7 @@ private:
     }
 
     std::mutex mutex_;
+    bool producerLease_ = false;
     std::condition_variable cv_;
     std::vector<PendingImport> pending_;
     std::vector<uint64_t> removals_;
@@ -896,7 +944,8 @@ private:
     VkCommandPool pool_ = VK_NULL_HANDLE;
     VkCommandBuffer cmd_ = VK_NULL_HANDLE;
     VkFence fence_ = VK_NULL_HANDLE;
-    VkSemaphore acquired_ = VK_NULL_HANDLE, rendered_ = VK_NULL_HANDLE;
+    VkSemaphore acquired_ = VK_NULL_HANDLE;
+    std::vector<VkSemaphore> rendered_;
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     VkFormat eyeFormat_ = VK_FORMAT_UNDEFINED;
     VkExtent2D extent_{};

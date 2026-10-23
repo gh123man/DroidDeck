@@ -49,7 +49,8 @@ static uint32_t g_qfam;
 static VkCommandPool g_pool;
 #define MAX_PRESENTS (1 + VKP_FG_MAX_GENERATIONS)
 static VkCommandBuffer g_cmds[MAX_PRESENTS];
-static VkSemaphore g_acqs[MAX_PRESENTS], g_rnds[MAX_PRESENTS];
+static VkSemaphore g_acqs[MAX_PRESENTS];
+static VkSemaphore *g_rnds;
 static VkFence g_fence;
 static int g_swap_extra;
 #define SCENE_FMT VK_FORMAT_R8G8B8A8_UNORM
@@ -193,10 +194,31 @@ static void reset_sync(void) {
     VkSemaphoreCreateInfo semci = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     for (int k = 0; k < MAX_PRESENTS; k++) {
         if (g_acqs[k]) g_vk.DestroySemaphore(g_dev, g_acqs[k], NULL);
-        if (g_rnds[k]) g_vk.DestroySemaphore(g_dev, g_rnds[k], NULL);
         g_vk.CreateSemaphore(g_dev, &semci, NULL, &g_acqs[k]);
-        g_vk.CreateSemaphore(g_dev, &semci, NULL, &g_rnds[k]);
     }
+}
+
+static void destroy_present_semaphores(void) {
+    if (!g_rnds) return;
+    for (uint32_t i = 0; i < g_nimg; i++)
+        if (g_rnds[i]) g_vk.DestroySemaphore(g_dev, g_rnds[i], NULL);
+    free(g_rnds);
+    g_rnds = NULL;
+}
+
+static int create_present_semaphores(void) {
+    g_rnds = calloc(g_nimg, sizeof(*g_rnds));
+    if (!g_rnds) return -1;
+    VkSemaphoreCreateInfo info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    for (uint32_t i = 0; i < g_nimg; i++) {
+        VkSemaphore created = VK_NULL_HANDLE;
+        if (g_vk.CreateSemaphore(g_dev, &info, NULL, &created) != VK_SUCCESS) {
+            destroy_present_semaphores();
+            return -1;
+        }
+        g_rnds[i] = created;
+    }
+    return 0;
 }
 
 static void destroy_swapchain(void) {
@@ -204,7 +226,8 @@ static void destroy_swapchain(void) {
     if (g_dev_state != 1) return;
     g_vk.DeviceWaitIdle(g_dev);
     reset_sync();
-    for (uint32_t i = 0; i < g_nimg; i++) blendp_forget_image(g_images[i]);
+    destroy_present_semaphores();
+    if (g_images) for (uint32_t i = 0; i < g_nimg; i++) blendp_forget_image(g_images[i]);
     if (g_swapchain) g_vk.DestroySwapchainKHR(g_dev, g_swapchain, NULL);
     g_swapchain = VK_NULL_HANDLE;
     g_swap_md_identity = 0;
@@ -741,9 +764,14 @@ static int swap_init_locked(void) {
         SWLOGE("present: vkCreateSwapchainKHR failed (%d)", (int)cr);
         return -1;
     }
-    g_vk.GetSwapchainImagesKHR(g_dev, g_swapchain, &g_nimg, NULL);
+    if (g_vk.GetSwapchainImagesKHR(g_dev, g_swapchain, &g_nimg, NULL) != VK_SUCCESS || !g_nimg) {
+        destroy_swapchain(); return -1;
+    }
     g_images = calloc(g_nimg, sizeof(VkImage));
-    g_vk.GetSwapchainImagesKHR(g_dev, g_swapchain, &g_nimg, g_images);
+    if (!g_images || g_vk.GetSwapchainImagesKHR(g_dev, g_swapchain, &g_nimg, g_images) != VK_SUCCESS ||
+        create_present_semaphores() != 0) {
+        destroy_swapchain(); return -1;
+    }
 
     droiddeck_log("gpu", "screen output %ux%u, %u buffers, vsync%s", g_extent.width, g_extent.height, g_nimg,
                g_swap_extra ? " (frame generation: several presents per frame)" : "");
@@ -1241,6 +1269,7 @@ static void device_lost(const char *where) {
     vkp_framegen_device_lost();
     droiddeck_log("error", "GPU device lost (VK_ERROR_DEVICE_LOST in %s): the compositor has stopped presenting; "
                "restart the session", where);
+    destroy_present_semaphores();
     for (uint32_t i = 0; i < g_nimg; i++) blendp_forget_image(g_images[i]);
     if (g_swapchain) g_vk.DestroySwapchainKHR(g_dev, g_swapchain, NULL);
     g_swapchain = VK_NULL_HANDLE;
@@ -1674,7 +1703,7 @@ static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, i
         VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1,
                            .pWaitSemaphores = &g_acqs[k], .pWaitDstStageMask = &wait, .commandBufferCount = 1,
-                           .pCommandBuffers = &g_cmds[k], .signalSemaphoreCount = 1, .pSignalSemaphores = &g_rnds[k]};
+                           .pCommandBuffers = &g_cmds[k], .signalSemaphoreCount = 1, .pSignalSemaphores = &g_rnds[img]};
         VkResult qr = g_vk.QueueSubmit(g_queue, 1, &si, last ? g_fence : VK_NULL_HANDLE);
         if (qr != VK_SUCCESS) {
             if (qr == VK_ERROR_DEVICE_LOST) device_lost("submit");
@@ -1684,7 +1713,7 @@ static int render_impl(int scene_w, int scene_h, const struct vkp_draw *draws, i
         }
         fence_submitted = last;
         VkPresentInfoKHR pi = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount = 1,
-                               .pWaitSemaphores = &g_rnds[k], .swapchainCount = 1,
+                               .pWaitSemaphores = &g_rnds[img], .swapchainCount = 1,
                                .pSwapchains = &g_swapchain, .pImageIndices = &img};
         const int64_t t_pres = perf_now();
         pr = g_vk.QueuePresentKHR(g_queue, &pi);

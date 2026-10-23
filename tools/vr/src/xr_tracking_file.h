@@ -12,11 +12,15 @@
 
 class XrTrackingFile {
 public:
-    explicit XrTrackingFile(const char *path = "/run/droiddeck/" DROIDDECK_XR_FILE) : path_(path) {}
+    explicit XrTrackingFile(const char *path = "/run/droiddeck/" DROIDDECK_XR_FILE,
+                            int64_t (*clock)() = Now) : path_(path), clock_(clock) {}
     ~XrTrackingFile() { if (mapping_) munmap(mapping_, sizeof(*mapping_)); }
     bool Read(DroidDeckXrTracking *packet) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!mapping_) {
+            const int64_t now = clock_();
+            if (now < nextOpenNs_) return false;
+            nextOpenNs_ = now + 250000000LL;
             int descriptor = open(path_.c_str(), O_RDONLY | O_CLOEXEC);
             if (descriptor < 0) return false;
             struct stat status{};
@@ -65,4 +69,6 @@ private:
     DroidDeckXrTracking *mapping_ = nullptr;
     std::mutex mutex_;
     std::string path_;
+    int64_t (*clock_)();
+    int64_t nextOpenNs_ = 0;
 };

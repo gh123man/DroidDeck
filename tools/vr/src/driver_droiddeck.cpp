@@ -33,6 +33,7 @@
 #include "pad_controller_config.h"
 #include "joycon_shm.h"
 #include "presenter.h"
+#include "producer_lease.h"
 #include "spatial_tracking.h"
 #include "luma_joycon.h"
 #include "render_target.h"
@@ -102,6 +103,7 @@ HandTrace gHandTrace;
 
 class PoseFile {
 public:
+    explicit PoseFile(const char *path = kPosePath) : path_(path) {}
     bool Read(droiddeck_headpose *out) {
         if (!map_ && !Open()) return false;
         for (int tries = 0; tries < 8; tries++) {
@@ -118,15 +120,16 @@ public:
 
 private:
     bool Open() {
-        int fd = open(kPosePath, O_RDONLY | O_CLOEXEC);
+        int fd = open(path_.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd < 0) return false;
         void *p = mmap(nullptr, sizeof(droiddeck_headpose), PROT_READ, MAP_SHARED, fd, 0);
         close(fd);
         if (p == MAP_FAILED) return false;
         map_ = (volatile droiddeck_headpose *)p;
-        Log("head pose file mapped: %s", kPosePath);
+        Log("head pose file mapped: %s", path_.c_str());
         return true;
     }
+    std::string path_;
     volatile droiddeck_headpose *map_ = nullptr;
 };
 
@@ -267,6 +270,7 @@ public:
     }
     struct Set {
         SharedTextureHandle_t handles[3] = {};
+        uint64_t minimumWrite[3] = {};
         int fds[3] = {-1, -1, -1};
         uint32_t pid = 0, index = 0;
         SwapTextureSetDesc_t desc = {};
@@ -328,6 +332,9 @@ public:
             if (!s) { (*indices)[e] = 0; continue; }
             s->index = (s->index + 1) % 3;
             (*indices)[e] = s->index;
+            const char *lease = getenv("DROIDDECK_VR_PRODUCER_LEASE"), *present = getenv("DROIDDECK_VR_PRESENT");
+            if (lease && !strcmp(lease, "1") && (!present || strcmp(present, "questframes")))
+                s->minimumWrite[s->index] = droiddeck_producer_reserve(s->pid);
         }
     }
 
@@ -341,13 +348,22 @@ public:
                 frame_.render.bytes = xrWidth_ * xrHeight_ * 4;
                 frame_.render.color_space = DROIDDECK_XR_COLOR_LINEAR_RGBA8;
             }
+            std::lock_guard<std::mutex> lock(mutex_);
             for (int e = 0; e < 2; e++) {
                 frame_.texture[e] = eyes[e].hTexture;
+                frame_.minimumWrite[e] = 0;
+                if (Set *set = Find(eyes[e].hTexture))
+                    for (int i = 0; i < 3; i++)
+                        if (set->handles[i] == eyes[e].hTexture) frame_.minimumWrite[e] = set->minimumWrite[i];
                 frame_.bounds[e][0] = eyes[e].bounds.uMin; frame_.bounds[e][1] = eyes[e].bounds.vMin;
                 frame_.bounds[e][2] = eyes[e].bounds.uMax; frame_.bounds[e][3] = eyes[e].bounds.vMax;
                 std::memcpy(frame_.render.projection[e], eyes[e].mProjection.m, sizeof(eyes[e].mProjection.m));
                 xr_frame_eye_pose(frame_.render.eye_pose[e], eyes[e].mHmdPose.m, eyeToHead_[e].m);
             }
+            for (int e = 0; e < 2; e++)
+                if (Set *set = Find(eyes[e].hTexture))
+                    for (int i = 0; i < 3; i++)
+                        if (set->handles[i] == eyes[e].hTexture) set->minimumWrite[i] = 0;
         }
         if (frames_ < 3)
             Log("SubmitLayer: textures 0x%llx / 0x%llx, bounds %.2f,%.2f-%.2f,%.2f",
@@ -1348,6 +1364,7 @@ private:
 
 class CardboardHmd : public ITrackedDeviceServerDriver, public IVRDisplayComponent {
 public:
+    explicit CardboardHmd(const char *posePath = kPosePath) : pose_(posePath) {}
     EVRInitError Activate(uint32_t unObjectId) override {
         id_ = unObjectId;
         PropertyContainerHandle_t c = VRProperties()->TrackedDeviceToPropertyContainer(id_);
@@ -1471,8 +1488,10 @@ public:
         }
         p.vecPosition[1] = 1.6;
         droiddeck_headpose hp;
-        bool ok = pose_.Read(&hp);
-        if (ok) {
+        const bool poseRead = pose_.Read(&hp);
+        if (poseRead) lastHeadPoseSnapshot_ = hp;
+        else hp = lastHeadPoseSnapshot_;
+        if (hp.magic == DROIDDECK_HEADPOSE_MAGIC && hp.version == DROIDDECK_HEADPOSE_VERSION) {
             p.qRotation = QuatFromMatrix(hp.rot);
             p.poseTimeOffset = 0;
             if (hp.tan_half_fov > 0.0f) tanHalf_ = hp.tan_half_fov;
@@ -1771,6 +1790,7 @@ private:
     PoseFile pose_;
     SpatialFile spatial_;
     std::mutex spatialMutex_;
+    droiddeck_headpose lastHeadPoseSnapshot_{};
     DriverPose_t lastSpatial_{};
     droiddeck_spatialpose lastSpatialSnapshot_{};
     XrTrackingFile xr_;
