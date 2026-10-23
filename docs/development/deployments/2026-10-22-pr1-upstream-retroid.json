@@ -16,5 +16,5 @@
   },
   "packaging": "CI release APK; only manifest package, authority, and task identifiers changed for the existing test-app slot. All compiled code and runtime assets match CI. Signed with the existing AOSP test key.",
   "validation": "APK compilation, bundled-runtime checks, signature and alignment verification passed. Post-build Rust, Python, and Android unit tests were explicitly skipped at the user request.",
-  "deployment_status": "Pinned before installation; device confirmation pending."
+  "deployment_status": "Installed and launched successfully; installed APK SHA256 matches the pinned artifact. App reports source ce0001a. Android currently reports no glasses attached, so SteamVR startup awaits reconnection."
 }
