@@ -21,10 +21,12 @@ class AndroidPresentSemaphoresTest(unittest.TestCase):
             binary = work / 'test'
             command = ['cc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Wno-unused-parameter',
                        '-Wno-unused-variable', '-Wno-unused-but-set-variable', f'-I{work}']
-            if os.environ.get('VK_INCLUDE'):
-                command.append('-I' + os.environ['VK_INCLUDE'])
+            headers = os.environ.get('VK_INCLUDE') or str(ROOT / 'build/vr/include')
+            if (Path(headers) / 'vulkan/vulkan.h').is_file():
+                command.append('-I' + headers)
             command += [str(ROOT / 'tools/vr/tests/test_android_present_semaphores.c'), '-o', str(binary)]
-            subprocess.run(command, check=True, capture_output=True, text=True)
+            compiled = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('PASS:', result.stdout)
