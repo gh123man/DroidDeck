@@ -32,10 +32,10 @@ compile() {
             -o build/vr/test_fence_tracker tools/vr/tests/test_fence_tracker.c
         build/vr/test_fence_tracker
         cc -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Ibuild/vr/include \
-            -o build/vr/test_timeline_bridge tools/vr/tests/test_timeline_bridge.c -ldl
+            -o build/vr/test_timeline_bridge tools/vr/tests/test_timeline_bridge.c -ldl -lm
         build/vr/test_timeline_bridge
         cc -std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -pthread -Ibuild/vr/include \
-            -o build/vr/test_compositor_submit tools/vr/tests/test_compositor_submit.c -ldl
+            -o build/vr/test_compositor_submit tools/vr/tests/test_compositor_submit.c -ldl -lm
         build/vr/test_compositor_submit
         c++ -std=c++17 -O2 -Wall -Wextra -Werror -Itools/vr/src \
             -o build/vr/test_render_target tools/vr/tests/test_render_target.cpp

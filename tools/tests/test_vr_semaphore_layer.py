@@ -20,7 +20,7 @@ class VrSemaphoreLayerTest(unittest.TestCase):
             executable = Path(directory) / "semaphore-layer-test"
             subprocess.run(["gcc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
                             "-pthread", "-I" + str(headers), str(repository / "tools/vr/tests/test_semaphore_layer.c"),
-                            "-ldl", "-o", str(executable)], check=True)
+                            "-ldl", "-lm", "-o", str(executable)], check=True)
             result = subprocess.run([str(executable)], capture_output=True, text=True, timeout=20)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("fd ownership passed", result.stdout)
